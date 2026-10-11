@@ -74,6 +74,8 @@ def render_pi_files(
         "flows_every": str(config.schedules.flows_every_minutes),
         "enrich_at": config.schedules.enrich_daily_at,
         "upload_at": config.schedules.upload_nightly_at,
+        "assessment_when": config.schedules.self_assessment_weekly,
+        "assessment_calendar": _weekly_calendar(config.schedules.self_assessment_weekly),
         "syslog_days": str(config.retention.syslog_days),
         "tmpfiles_lines": "\n".join(
             f"d {d} 0750 {p.service_user} {p.service_user} -" for d in writable_dirs
@@ -87,6 +89,12 @@ def render_pi_files(
             continue
         rendered[template.name.removesuffix(".in")] = _render(template, values)
     return rendered
+
+
+def _weekly_calendar(weekly: str) -> str:
+    """``Sun 09:00`` -> systemd's ``Sun *-*-* 09:00:00``."""
+    day, at = weekly.split()
+    return f"{day} *-*-* {at}:00"
 
 
 def write_files(files: dict[str, str], out_dir: Path) -> list[Path]:

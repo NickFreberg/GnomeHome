@@ -1,0 +1,19 @@
+# Rendered by `just render-units` from config/gnomehome.toml. Edit the config, not this file.
+[Unit]
+Description=GnomeHome weekly self-assessment (the scheduled playbook, FR-17)
+
+[Service]
+Type=oneshot
+User=${user}
+Group=${user}
+Environment=GNOMEHOME_CONFIG=${config_file}
+ExecStart=${install_dir}/bin/gnomehome-playbook run-scheduled weekly-self-assessment
+TimeoutStartSec=15min
+# Reads the database and writes one incident: no network at all.
+PrivateNetwork=yes
+IPAddressDeny=any
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=${writable}
+ReadOnlyPaths=${readonly}
+${hardening}

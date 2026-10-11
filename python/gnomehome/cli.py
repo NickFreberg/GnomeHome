@@ -585,7 +585,7 @@ def cmd_quarantine(config: Config, args: argparse.Namespace) -> int:
     except ProtectedListError as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 1
-    conn = open_database(config.paths.db_path)
+    conn = open_database(_db_path(config, args))
     audit = AuditLog(conn)
     guard = Guard(assets, audit=audit, actor="system:playbook")
     live = args.live and live_allowed(config)
@@ -945,6 +945,7 @@ def build_parser() -> argparse.ArgumentParser:
     quarantine_cmd.add_argument(
         "--live", action="store_true", help="really send it (also needs [response] mode = live)"
     )
+    quarantine_cmd.add_argument("--dev", action="store_true", help="audit to the dev database")
     quarantine_cmd.set_defaults(handler=cmd_quarantine)
 
     assess = sub.add_parser("self-assess", help="weekly self-assessment: what changed (FR-17)")

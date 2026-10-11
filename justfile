@@ -95,6 +95,26 @@ export *args:
 upload *args:
     {{gnomehome}} upload {{args}}
 
+# Run the playbook engine once: new incidents, decided approvals, expiries (--dev). Dry run by default.
+playbook *args:
+    cargo run --quiet --package gnomehome-playbook -- {{args}} run
+
+# Requests waiting for your approval (--dev)
+approvals *args:
+    cargo run --quiet --package gnomehome-playbook -- {{args}} approvals
+
+# Approve a waiting playbook run, which then acts right away: just approve <run-id> [--dev]
+approve run *args:
+    cargo run --quiet --package gnomehome-playbook -- {{args}} approve {{run}}
+
+# Deny a waiting playbook run: just deny <run-id> [--dev]
+deny run *args:
+    cargo run --quiet --package gnomehome-playbook -- {{args}} deny {{run}}
+
+# Check every playbook file in playbooks/
+playbooks-check:
+    cargo run --quiet --package gnomehome-playbook -- validate playbooks
+
 # Weekly self-assessment: new devices, newly exposed ports, new CVEs (--week-end, --dev)
 self-assess *args:
     {{gnomehome}} self-assess {{args}}
@@ -201,4 +221,4 @@ infra-check:
 # Generic aarch64 only: never add target-cpu=native (the Pi's CPU lacks M1 instructions).
 # Cross-compile the Rust services for the Pi (needs `cargo install cross` and Docker running)
 build-pi:
-    cross build --release --target aarch64-unknown-linux-gnu --package gnomehome-dnstail
+    cross build --release --target aarch64-unknown-linux-gnu --package gnomehome-dnstail --package gnomehome-playbook
