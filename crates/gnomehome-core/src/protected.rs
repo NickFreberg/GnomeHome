@@ -233,8 +233,9 @@ fn only_keys(
 }
 
 /// yaml-rust2 keeps the last of two duplicate keys, which could silently drop a MAC.
-/// This walks the parser's events and rejects any mapping with a repeated key.
-fn reject_duplicate_keys(text: &str) -> Result<(), ProtectedListError> {
+/// This walks the parser's events and rejects any mapping with a repeated key. Other
+/// YAML readers (the playbook engine) use it too.
+pub fn reject_duplicate_keys(text: &str) -> Result<(), ProtectedListError> {
     use yaml_rust2::parser::{Event, MarkedEventReceiver, Parser};
     use yaml_rust2::scanner::Marker;
 
@@ -339,12 +340,17 @@ impl Guard {
     /// True if free text contains a protected IPv4 address or MAC (including the
     /// 14-octet iptables `MAC=` field, checked with a sliding 6-octet window).
     pub fn text_mentions_protected(&self, text: &str) -> bool {
+        self.find_in_text(text).is_some()
+    }
+
+    /// The first protected device mentioned in free text, so a refusal can be audited
+    /// by its label.
+    pub fn find_in_text(&self, text: &str) -> Option<Match> {
         for token in runs(text, |c| c.is_ascii_digit() || c == '.') {
-            if is_ipv4_token(token)
-                && normalize_ip(token).is_ok()
-                && self.is_protected(Some(token), None)
-            {
-                return true;
+            if is_ipv4_token(token) && normalize_ip(token).is_ok() {
+                if let Some(m) = self.assets.match_target(Some(token), None) {
+                    return Some(m);
+                }
             }
         }
         for token in runs(text, |c| c.is_ascii_hexdigit() || c == ':' || c == '-') {
@@ -357,12 +363,12 @@ impl Guard {
                 continue;
             }
             for window in octets.windows(6) {
-                if self.is_protected(None, Some(&window.join(":"))) {
-                    return true;
+                if let Some(m) = self.assets.match_target(None, Some(&window.join(":"))) {
+                    return Some(m);
                 }
             }
         }
-        false
+        None
     }
 }
 

@@ -175,6 +175,8 @@ class PlatformConfig:
     pihole_password_file: Path | None = None
     #: The gnomehome command, which the Rust playbook engine runs for Python-only actions.
     gnomehome_cli: Path | None = None
+    #: Folder of YAML playbooks for the Rust engine.
+    playbooks_dir: Path | None = None
     # Router SSH, for the connection-table pull (FR-08). All optional.
     ssh_path: Path | None = None
     router_ssh_user: str | None = None
@@ -580,6 +582,7 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
             "storage_sas_file",
             "pihole_password_file",
             "gnomehome_cli",
+            "playbooks_dir",
             "ssh_path",
             "router_ssh_user",
             "router_ssh_port",
@@ -667,6 +670,7 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
         storage_sas_file=optional_path("storage_sas_file"),
         pihole_password_file=optional_path("pihole_password_file"),
         gnomehome_cli=optional_path("gnomehome_cli"),
+        playbooks_dir=optional_path("playbooks_dir"),
         ssh_path=optional_absolute("ssh_path"),
         router_ssh_user=_ssh_user(table, where),
         router_ssh_port=_int_range(table, "router_ssh_port", 22, 1, 65535, where),

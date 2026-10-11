@@ -31,6 +31,8 @@ struct RawConfig {
     api: Option<toml::Table>,
     #[serde(default)]
     network: Option<toml::Table>,
+    #[serde(default)]
+    response: Option<toml::Table>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,6 +46,12 @@ struct RawPlatform {
     run_dir: Option<String>,
     #[serde(default)]
     data_dir: Option<String>,
+    #[serde(default)]
+    gnomehome_cli: Option<String>,
+    #[serde(default)]
+    pihole_password_file: Option<String>,
+    #[serde(default)]
+    playbooks_dir: Option<String>,
 }
 
 /// Resolved settings for the selected platform.
@@ -57,10 +65,16 @@ pub struct Config {
     pub pihole_log: Option<PathBuf>,
     pub run_dir: Option<PathBuf>,
     pub data_dir: Option<PathBuf>,
+    /// The Python `gnomehome` command, for actions only Python can do.
+    pub gnomehome_cli: Option<PathBuf>,
+    pub pihole_password_file: Option<PathBuf>,
+    pub playbooks_dir: Option<PathBuf>,
     /// `[api]` as raw TOML, for the API crate to read its own keys from.
     pub api: toml::Table,
     /// `[network]` as raw TOML.
     pub network: toml::Table,
+    /// `[response]` as raw TOML, for the playbook engine.
+    pub response: toml::Table,
 }
 
 impl Config {
@@ -101,8 +115,12 @@ impl Config {
             pihole_log: platform.pihole_log.as_deref().map(resolve),
             run_dir: platform.run_dir.as_deref().map(resolve),
             data_dir: platform.data_dir.as_deref().map(resolve),
+            gnomehome_cli: platform.gnomehome_cli.as_deref().map(resolve),
+            pihole_password_file: platform.pihole_password_file.as_deref().map(resolve),
+            playbooks_dir: platform.playbooks_dir.as_deref().map(resolve),
             api: raw.api.unwrap_or_default(),
             network: raw.network.unwrap_or_default(),
+            response: raw.response.unwrap_or_default(),
         })
     }
 

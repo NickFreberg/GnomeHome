@@ -150,6 +150,7 @@ osascript_path = "/usr/bin/osascript"          # macOS's built-in tool for notif
 nvd_api_key_file = "~/.config/gnomehome/nvd_api_key"
 storage_sas_file = "~/.config/gnomehome/storage_sas"   # optional; see infra/README.md
 gnomehome_cli = "../.venv/bin/gnomehome"       # what the Rust playbook engine runs for Python actions
+playbooks_dir = "../playbooks"
 # router_syslog_path is not set: the router sends its syslog to the Pi.
 # On the Mac, `just synth-load` exercises the same code with synthetic syslog.
 
@@ -180,6 +181,7 @@ nvd_api_key_file = "/etc/gnomehome/nvd_api_key"   # optional, root:gnomehome 064
 storage_sas_file = "/etc/gnomehome/storage_sas"   # optional, root:gnomehome 0640 (Phase 6 upload)
 pihole_password_file = "/etc/gnomehome/pihole_app_password"   # optional, root:gnomehome 0640 (Phase 7)
 gnomehome_cli = "/opt/gnomehome/.venv/bin/gnomehome"
+playbooks_dir = "/opt/gnomehome/playbooks"
 # Router SSH for the connection-table pull (enable SSH, LAN only, key login, in the
 # router: Administration > System). The key must be owned by the service user, mode 0600.
 ssh_path = "/usr/bin/ssh"
