@@ -16,6 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from gnomehome import __version__
+from gnomehome.audit import AuditLog
 from gnomehome.audit import verify as verify_audit
 from gnomehome.collectors.nmap_discovery import (
     GuardViolation,
@@ -27,7 +28,10 @@ from gnomehome.collectors.nmap_discovery import (
 from gnomehome.config import Config, ConfigError, load_config, platform_mismatch
 from gnomehome.db import open_database
 from gnomehome.db.migrate import MigrationError, current_version
-from gnomehome.protected import ProtectedAssets, ProtectedListError
+from gnomehome.db.scrub import scrub_protected
+from gnomehome.protected import ProtectedAssets, ProtectedListError, load_guard
+from gnomehome.synthetic.generate import generate
+from gnomehome.synthetic.load import load_synthetic
 
 log = logging.getLogger("gnomehome")
 
@@ -271,6 +275,68 @@ def cmd_discover(config: Config, args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# synthetic data
+# --------------------------------------------------------------------------
+
+
+def _synth_dir(config: Config, args: argparse.Namespace) -> Path:
+    if args.dir:
+        return Path(args.dir)
+    return (
+        config.paths.synthetic_dir
+        / f"seed-{args.seed if args.seed is not None else config.synthetic.seed}"
+    )
+
+
+def cmd_synth(config: Config, args: argparse.Namespace) -> int:
+    seed = args.seed if args.seed is not None else config.synthetic.seed
+    days = args.days if args.days is not None else config.synthetic.days
+    out = _synth_dir(config, args)
+    result = generate(out, seed=seed, start_date=config.synthetic.start_date, hours=days * 24)
+    print(f"Synthetic data (seed {seed}, {days} day(s)) written to {out}")
+    print(
+        f"  {result.devices} devices, {result.queries} DNS queries, {result.flows} flows, "
+        f"{result.snapshots} conntrack snapshots"
+    )
+    print("  Ground truth: labels.json. Load it with `just synth-load`.")
+    return 0
+
+
+def cmd_synth_load(config: Config, args: argparse.Namespace) -> int:
+    data_dir = _synth_dir(config, args)
+    if not (data_dir / "household.json").exists():
+        print(f"No synthetic data in {data_dir}. Run `just synth` first.", file=sys.stderr)
+        return 1
+    try:
+        assets = ProtectedAssets.load(config.paths.protected_assets)
+    except ProtectedListError as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 1
+    conn = open_database(config.paths.dev_db_path)
+    audit = AuditLog(conn)
+    scrub_protected(conn, assets, audit=audit, actor="system:synthetic")
+    guard = load_guard(config.paths.protected_assets, audit=audit, actor="system:synthetic")
+    result = load_synthetic(conn, guard, data_dir)
+    audit.append(
+        actor="system:synthetic",
+        action="synthetic.load",
+        target=None,
+        result="success",
+        details={
+            "assets": result.assets,
+            "dns_events": result.dns_events,
+            "flow_events": result.flow_events,
+            "dropped_protected": result.dropped_protected,
+        },
+    )
+    conn.close()
+    print(f"Loaded into the dev database {config.paths.dev_db_path}:")
+    print(f"  {result.assets} assets, {result.dns_events} DNS events, {result.flow_events} flows")
+    print(f"  {result.dropped_protected} record(s) dropped by the protected-asset guard")
+    return 0
+
+
+# --------------------------------------------------------------------------
 # Wiring
 # --------------------------------------------------------------------------
 
@@ -315,6 +381,15 @@ def build_parser() -> argparse.ArgumentParser:
             "--dry-run", action="store_true", help="print the nmap commands; send nothing"
         )
         cmd.set_defaults(handler=handler)
+
+    synth = sub.add_parser("synth", help="generate synthetic DNS logs and flows")
+    synth_load = sub.add_parser("synth-load", help="load synthetic data into the dev database")
+    for cmd in (synth, synth_load):
+        cmd.add_argument("--seed", type=int, help="random seed (default: [synthetic].seed)")
+        cmd.add_argument("--dir", help="dataset folder (default: <synthetic_dir>/seed-<seed>)")
+    synth.add_argument("--days", type=int, help="days of data (default: [synthetic].days)")
+    synth.set_defaults(handler=cmd_synth)
+    synth_load.set_defaults(handler=cmd_synth_load)
     return parser
 
 

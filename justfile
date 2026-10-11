@@ -50,6 +50,16 @@ discover:
 scan-dry:
     {{gnomehome}} scan --dry-run
 
+# ------------------------------------------------------------- synthetic --
+
+# Generate synthetic DNS logs and router flows (fake household, reproducible)
+synth *args:
+    {{gnomehome}} synth {{args}}
+
+# Load the synthetic data into the dev database (never the real one), through the guard
+synth-load *args:
+    {{gnomehome}} synth-load {{args}}
+
 # -------------------------------------------------------------- database --
 
 # Create the SQLite database or apply pending migrations

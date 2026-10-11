@@ -71,3 +71,19 @@ def test_real_scan_with_example_config_is_refused_before_anything_is_sent(config
     assert cli.main(["--config", str(config_path), "scan"]) == 1
     assert "REFUSED (nothing was sent)" in capsys.readouterr().err
     assert not (config_path.parent.parent / "data" / "gnomehome.sqlite3").exists()
+
+
+def test_synth_then_synth_load_uses_the_dev_database(config_path, capsys):
+    base = ["--config", str(config_path)]
+    assert cli.main([*base, "synth", "--seed", "3", "--days", "1"]) == 0
+    assert cli.main([*base, "synth-load", "--seed", "3"]) == 0
+    out = capsys.readouterr().out
+    assert "dropped by the protected-asset guard" in out
+    data = config_path.parent.parent / "data"
+    assert (data / "dev.sqlite3").exists()
+    assert not (data / "gnomehome.sqlite3").exists()  # the real DB is never touched
+
+
+def test_synth_load_without_data_explains_what_to_do(config_path, capsys):
+    assert cli.main(["--config", str(config_path), "synth-load", "--seed", "999"]) == 1
+    assert "just synth" in capsys.readouterr().err
