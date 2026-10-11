@@ -119,6 +119,10 @@ playbooks-check:
 notify *args:
     {{gnomehome}} notify {{args}}
 
+# Import the weekly AI check-in and its suggestions (--week-end, --file report.json, --dev)
+checkin-fetch *args:
+    {{gnomehome}} checkin-fetch {{args}}
+
 # Weekly self-assessment: new devices, newly exposed ports, new CVEs (--week-end, --dev)
 self-assess *args:
     {{gnomehome}} self-assess {{args}}
@@ -242,4 +246,4 @@ infra-check:
 # Generic aarch64 only: never add target-cpu=native (the Pi's CPU lacks M1 instructions).
 # Cross-compile the Rust services for the Pi (needs `cargo install cross` and Docker running)
 build-pi:
-    cross build --release --target aarch64-unknown-linux-gnu --package gnomehome-dnstail --package gnomehome-playbook
+    cross build --release --target aarch64-unknown-linux-gnu --package gnomehome-dnstail --package gnomehome-playbook --package gnomehome-api

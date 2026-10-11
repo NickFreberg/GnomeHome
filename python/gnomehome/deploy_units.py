@@ -76,6 +76,8 @@ def render_pi_files(
         "upload_at": config.schedules.upload_nightly_at,
         "assessment_when": config.schedules.self_assessment_weekly,
         "assessment_calendar": _weekly_calendar(config.schedules.self_assessment_weekly),
+        "checkin_when": config.schedules.checkin_fetch_weekly,
+        "checkin_calendar": _weekly_calendar(config.schedules.checkin_fetch_weekly),
         "syslog_days": str(config.retention.syslog_days),
         "tmpfiles_lines": "\n".join(
             f"d {d} 0750 {p.service_user} {p.service_user} -" for d in writable_dirs

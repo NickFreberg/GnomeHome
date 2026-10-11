@@ -31,6 +31,7 @@ def test_every_template_renders_with_no_placeholders_left(files):
         "gnomehome-playbook.service", "gnomehome-playbook.timer",
         "gnomehome-assessment.service", "gnomehome-assessment.timer",
         "gnomehome-notify.service", "gnomehome-notify.timer",
+        "gnomehome-api.service", "gnomehome-checkin.service", "gnomehome-checkin.timer",
         "tmpfiles-gnomehome.conf", "rsyslog-gnomehome.conf", "logrotate-gnomehome",
     }  # fmt: skip
     for name, content in files.items():
@@ -53,7 +54,7 @@ def test_raw_socket_rights_only_for_the_nmap_jobs(files):
         assert "AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN" in unit
         assert "SuccessExitStatus=75" in unit
     for job in ("syslog", "analyze", "flows", "dnstail", "enrich", "export", "playbook",
-                "assessment", "notify"):  # fmt: skip
+                "assessment", "notify", "api", "checkin"):  # fmt: skip
         unit = files[f"gnomehome-{job}.service"]
         assert "AmbientCapabilities" not in unit, job
         assert "CapabilityBoundingSet=\n" in unit, job
@@ -162,3 +163,10 @@ def test_playbook_engine_runs_every_minute_and_reaches_only_pihole_and_the_route
     weekly = files["gnomehome-assessment.service"]
     assert "run-scheduled weekly-self-assessment" in weekly and "PrivateNetwork=yes" in weekly
     assert "OnCalendar=Sun *-*-* 09:00:00" in files["gnomehome-assessment.timer"]
+
+
+def test_dashboard_runs_always_and_checkin_weekly(files):
+    api = files["gnomehome-api.service"]
+    assert "Type=simple" in api and "ExecStart=/opt/gnomehome/bin/gnomehome-api serve" in api
+    assert api.rindex("MemoryMax=128M") > api.index("MemoryMax=256M")
+    assert "OnCalendar=Sun *-*-* 11:00:00" in files["gnomehome-checkin.timer"]
