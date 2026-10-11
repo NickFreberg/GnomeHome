@@ -100,4 +100,6 @@ Note the date and the PASS in your own records. Don't paste the IPs anywhere pub
 ## On the Pi (Monday onward)
 
 Same test, run on the Pi itself: use `eth0` instead of `en0`, and get the Pi's IP with
-`hostname -I`. Run it before enabling any scan timer.
+`hostname -I`. In step 3, run the scan the way the timer will:
+`sudo systemctl start gnomehome-scan.service`. Run the test before enabling any scan timer
+(`deploy/pi/README.md`, step 7).

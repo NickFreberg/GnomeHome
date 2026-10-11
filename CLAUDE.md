@@ -44,7 +44,9 @@ a portfolio piece, so code, docs, and commits should read well to a reviewer.
 - Linux-only pieces (systemd units, LUKS, setcap, firewall) live in `deploy/pi/`.
 - One task runner: `just`. Same commands on both machines.
 - nmap runs natively, never in Docker (Docker on macOS can't see the LAN). On the Mac it needs `sudo`
-  (`nmap_privilege = "sudo"`). On the Pi, nmap gets file capabilities instead (`"capabilities"`).
+  (`nmap_privilege = "sudo"`). On the Pi (`"capabilities"`), the discover and scan systemd units grant
+  `CAP_NET_RAW`/`CAP_NET_ADMIN` as ambient capabilities. No setcap, no sudo.
+- Pi system files are templates in `deploy/pi/templates/`, rendered from config by `just render-units`.
 - Rust builds target generic aarch64. **Never use `target-cpu=native`**, because the Pi's Cortex-A53 lacks instructions the M1 has.
   Cross-compile for the Pi with `cross`, and never build on the Pi.
 - Synthetic data (`just synth`) stands in for anything the Mac can't see. It loads only into the **dev**
@@ -69,7 +71,13 @@ a portfolio piece, so code, docs, and commits should read well to a reviewer.
 - nmap job: `collectors/nmap_discovery.py` (seven protection layers, listed in its docstring), parser
   `nmap_xml.py` (defusedxml, untrusted-text cleaning), writer `collectors/inventory.py`, drift check
   `collectors/arp_cache.py`.
+- Router syslog job: parser `router_log.py`, job `collectors/router_syslog.py` (checkpointed in
+  `ingest_checkpoint`, the same transaction as its events). Protected MACs get `record_protected_presence()`
+  (existence only, never updated). Free text goes through `guard.text_mentions_protected()`.
+- Incidents and alerts: `incidents.py` (dedup keys, learning window, drift incidents by label only),
+  `alerts.py` (banners pass text to osascript as arguments only, never device-supplied text).
 - Tests drive the nmap job with a fake runner and fixture XML. The only real-nmap test targets `127.0.0.1`.
+- Jobs that run from timers print protected devices by label only: the journal is stored on disk.
 - Runbook before any real scan: `docs/runbooks/zero-packet-test.md`.
 
 ## Commands

@@ -6,8 +6,8 @@ SOC (inventory, risk scoring, detection, and response) on a $35 computer.
 
 The full project plan, which is the source of truth, is in [`docs/PLAN.md`](docs/PLAN.md).
 
-> **Status:** Phase 1 foundation and the start of Phase 2 (asset inventory), developed on an M1
-> MacBook before the Pi arrives.
+> **Status:** Phase 1 foundation and Phase 2 (asset inventory with new-device alerts), developed on
+> an M1 MacBook before the Pi arrives. The Pi's system files are written but not yet run on hardware.
 
 ## What's here so far
 
@@ -21,6 +21,12 @@ The full project plan, which is the source of truth, is in [`docs/PLAN.md`](docs
   ([spec](docs/audit-log.md)).
 - **nmap discovery job**: host discovery plus a service scan into the asset inventory, built so it never
   sends a packet to a protected device.
+- **Router syslog job**: the router's DHCP messages feed the inventory within a minute or two, with no
+  router password stored. Firewall and other router lines are kept as events.
+- **Alerts**: plain-English incidents for new devices (after a learning window) and for a protected device
+  that shows up somewhere unexpected, plus a macOS banner on the Mac. Push to the iPhone comes in Phase 7.
+- **Pi deployment files**: systemd timers, rsyslog, logrotate, and tmpfiles, rendered from the config
+  (`just render-units`, see [`deploy/pi/README.md`](deploy/pi/README.md)).
 - **Synthetic data**: a fake household's Pi-hole DNS log and router connection-table snapshots, with
   labeled attack scenarios, for building detections without real traffic.
 - **Rust workspace**: Axum API stub (loopback only) and playbook-engine stub.
@@ -58,7 +64,7 @@ as untracked. It holds no secrets, so commit it if you want it versioned, or lea
 
 ```
 just setup             # installs Python deps into .venv, creates your config files from the examples
-just test              # every test should pass (about 240 Python tests plus Rust)
+just test              # every test should pass (about 300 Python tests plus Rust)
 ```
 
 Then edit two files, which git ignores:
@@ -91,14 +97,18 @@ It captures packets during a scan and proves nothing reaches the work laptop.
 | `just scan-dry` | Show exactly what `just scan` would run, without sending anything |
 | `just discover` | Host discovery only (quick, for new-device detection). Uses sudo on the Mac |
 | `just scan` | Host discovery plus service scan. Uses sudo on the Mac |
-| `just synth` | Generate synthetic DNS logs and router flows (`--seed`, `--days`) |
-| `just synth-load` | Load synthetic data into the **dev** database, through the guard |
+| `just syslog` | Read new router syslog lines: DHCP into the inventory, alerts (on the Pi) |
+| `just incidents` | List open incidents: new devices, protected-device drift (`--all`, `--dev`) |
+| `just incident-resolve <id>` | Mark an incident resolved |
+| `just synth` | Generate synthetic DNS logs, router flows, and router syslog (`--seed`, `--days`) |
+| `just synth-load` | Rebuild the **dev** database from synthetic data, through the real collectors |
 | `just migrate` | Create the database or apply migrations (`--dev` for the synthetic DB) |
 | `just db-status` | Schema version and row counts (`--dev` for the synthetic DB) |
 | `just audit-verify` | Recompute the audit log hash chain and report tampering |
 | `just test` | All Python and Rust tests |
 | `just lint` / `just fmt` | Lint checks / auto-format |
 | `just build` | Build Rust and run `cargo audit` |
+| `just render-units` | Render the Pi's systemd, rsyslog, logrotate, and tmpfiles files from the config |
 | `just serve` | Run the API stub on `127.0.0.1:8787` (try `curl 127.0.0.1:8787/healthz`) |
 
 ## How the protected-asset list is enforced
@@ -113,6 +123,10 @@ layer below works on its own:
 5. Right before each nmap call, the command line and exclude file are re-checked.
 6. If discovery still reports a protected device, the job stops before the service scan and stores nothing.
 7. The database schema refuses to store services, events, scores, or incidents for a protected device.
+
+Passive collectors follow the same list. The router syslog job records only that the laptop exists,
+drops any line that mentions it, and opens a label-only "drift" incident if the laptop's MAC shows up at an
+unlisted IP, or an unknown MAC takes its reserved IP.
 
 The audit log names protected devices by label only, never by MAC or IP. A test scans every committed file
 for real-looking IPs and MACs.

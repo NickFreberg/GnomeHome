@@ -1,29 +1,124 @@
 # deploy/pi: Linux-only pieces for the Raspberry Pi
 
-Everything in GnomeHome runs on the Mac except what lives here. These pieces only make sense on the Pi
-(Raspberry Pi OS Lite 64-bit), and nothing in this folder is used on the Mac.
+Everything in GnomeHome runs on the Mac except what lives here. Nothing in this folder is used on the Mac.
 
-The Pi arrives Monday, and this folder fills in then. Planned contents, all driven by values in
-`config/gnomehome.toml` (`platform = "pi"`) rather than hardcoded:
+> **Status: written before the Pi arrived, not yet run on real hardware.** `systemd-analyze verify`
+> passes on the rendered units. The rsyslog and logrotate files couldn't be checked yet. Expect small
+> fixes on the first install.
 
-| Piece | What it does | Plan reference |
+## What's here
+
+`templates/` holds the Pi's system files. `just render-units` fills them from `config/gnomehome.toml`
+(the `[platforms.pi]` table, `[schedules]`, `[retention]`, and `[network] router_ip`), so no path,
+user, schedule, or IP is hardcoded.
+
+| Rendered file | Installed as | What it does |
 | --- | --- | --- |
-| `systemd/gnomehome-discover.{service,timer}` | Runs `gnomehome discover` every `schedules.discovery_every_minutes` | FR-01, FR-03 |
-| `systemd/gnomehome-scan.{service,timer}` | Runs `gnomehome scan` every `schedules.service_scan_every_minutes` | FR-01, FR-02 |
-| Service sandboxing | Each job as its own unprivileged user, with `NoNewPrivileges`, `ProtectSystem=strict`, and `ReadWritePaths` limited to `/var/lib/gnomehome`; `RuntimeDirectory=gnomehome` provides `/run/gnomehome` | Security design, hardening |
-| nmap raw-socket rights | `nmap_privilege = "capabilities"`, so nmap runs with `--privileged` and **no sudo**. Options to decide on Monday: file capabilities on a dedicated nmap copy that only the scan user can execute, or `AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN` on the scan service | "Packet-capture capabilities granted only to the binaries that need them" |
-| `/etc/gnomehome/protected_assets.yaml` | The real protected list, `root:gnomehome` `0640` | Protected assets, step 4 |
-| LUKS with Adiantum | Full-disk encryption (the Pi 3 has no AES acceleration) | NFR-03 |
-| Host firewall, key-only SSH | The dashboard is reachable only from the LAN | R-01 |
-| rsyslog receiver | Router syslog to the Pi | FR-07 |
+| `gnomehome-discover.service` / `.timer` | `/etc/systemd/system/` | Host discovery every `discovery_every_minutes` |
+| `gnomehome-scan.service` / `.timer` | `/etc/systemd/system/` | Service scan every `service_scan_every_minutes` |
+| `gnomehome-syslog.service` / `.timer` | `/etc/systemd/system/` | Router syslog ingest every `syslog_every_minutes` (DHCP, new-device and drift alerts) |
+| `tmpfiles-gnomehome.conf` | `/etc/tmpfiles.d/gnomehome.conf` | Creates the data, scans, and run folders at boot |
+| `rsyslog-gnomehome.conf` | `/etc/rsyslog.d/30-gnomehome.conf` | Accepts the router's syslog (UDP 514, from `router_ip` only) into `router_syslog_path` |
+| `logrotate-gnomehome` | `/etc/logrotate.d/gnomehome` | Keeps `retention.syslog_days` of raw router syslog |
 
-## Before enabling any timer on the Pi
+**How the services are locked down:**
 
-1. Install Pi-hole natively (no Docker on the Pi, to save RAM), per the plan's Phase 1.
-2. `just setup`, then set `platform = "pi"` and fill in the protected list.
-3. `just doctor`, `just protected-check`, `just scan-dry`.
-4. Run the zero-packet test on the Pi: [`docs/runbooks/zero-packet-test.md`](../../docs/runbooks/zero-packet-test.md).
-5. Only then enable the timers.
+- **One unprivileged user.** Every job runs as the unprivileged `service_user`, with `ProtectSystem=strict`,
+  `NoNewPrivileges`, a system-call filter, `MemoryMax=256M`, and write access only to the data and run folders.
+- **Raw-socket rights for the nmap jobs only.** nmap needs `CAP_NET_RAW` and `CAP_NET_ADMIN` to see MAC
+  addresses. Only the discover and scan units get them, as *ambient capabilities* that nmap inherits.
+  That's the plan's "capabilities only to what needs them", without `setcap` on the system nmap binary,
+  which would let any user on the Pi send raw packets. No sudo is involved.
+- **No network for the syslog job.** It reads one local file, so it runs with `PrivateNetwork=yes` and no capabilities.
+- **A busy lock is a quiet skip.** Exit code 75 ("another scan holds the lock") counts as success, so the
+  discover and scan timers can overlap.
+
+## Install on the Pi (Monday)
+
+Run these on the Pi (Raspberry Pi OS Lite 64-bit). Each `sudo` line changes the system. Read it before running it.
+
+**1. Packages, service user, folders**
+
+```
+sudo apt update && sudo apt install -y git nmap rsyslog tcpdump
+sudo useradd --system --home-dir /var/lib/gnomehome --shell /usr/sbin/nologin gnomehome
+sudo install -d -o root -g gnomehome -m 0750 /etc/gnomehome
+```
+
+rsyslog is no longer installed by default on recent Raspberry Pi OS, and GnomeHome needs it to receive the
+router's syslog.
+
+**2. Code and Python environment**
+
+```
+curl -LsSf https://astral.sh/uv/install.sh | sh          # installs uv for your user
+sudo git clone https://github.com/NickFreberg/GnomeHome.git /opt/gnomehome
+cd /opt/gnomehome && sudo git checkout phase-1-foundation
+sudo ~/.local/bin/uv sync --no-dev --python /usr/bin/python3
+```
+
+`--python /usr/bin/python3` uses the Pi's own Python (3.11 or newer). That keeps the interpreter outside
+your home folder, which the services can't see (`ProtectHome=yes`).
+
+**3. Config and protected list**
+
+```
+sudo install -o root -g gnomehome -m 0640 config/gnomehome.example.toml /etc/gnomehome/gnomehome.toml
+sudo install -o root -g gnomehome -m 0640 config/protected_assets.example.yaml /etc/gnomehome/protected_assets.yaml
+sudo nano /etc/gnomehome/gnomehome.toml          # platform = "pi", your LAN, router_ip
+sudo nano /etc/gnomehome/protected_assets.yaml   # the laptop's real MACs and reserved IP
+```
+
+**4. Render and install the system files**
+
+```
+sudo GNOMEHOME_CONFIG=/etc/gnomehome/gnomehome.toml /opt/gnomehome/.venv/bin/gnomehome render-units --out ~/gnomehome-units
+cd ~/gnomehome-units
+sudo install -m 0644 gnomehome-*.service gnomehome-*.timer /etc/systemd/system/
+sudo install -m 0644 tmpfiles-gnomehome.conf /etc/tmpfiles.d/gnomehome.conf
+sudo install -m 0644 rsyslog-gnomehome.conf /etc/rsyslog.d/30-gnomehome.conf
+sudo install -m 0644 logrotate-gnomehome /etc/logrotate.d/gnomehome
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/gnomehome.conf
+sudo rsyslogd -N1 && sudo systemctl restart rsyslog       # -N1 checks the config first
+sudo systemctl daemon-reload
+```
+
+**5. Database and checks, as the service user**
+
+```
+G="sudo -u gnomehome env GNOMEHOME_CONFIG=/etc/gnomehome/gnomehome.toml /opt/gnomehome/.venv/bin/gnomehome"
+$G migrate
+$G doctor
+$G protected-check
+$G scan --dry-run
+```
+
+**6. Point the router's syslog at the Pi**
+
+In the router: **Administration**, then **System**, then set **Remote Log Server** to the Pi's IP. Check that lines arrive:
+
+```
+sudo tail -f /var/log/gnomehome/router.log
+sudo systemctl start gnomehome-syslog.service && journalctl -u gnomehome-syslog -n 20
+```
+
+**7. Zero-packet test on the Pi**
+
+Do this **before enabling any scan timer**: [`docs/runbooks/zero-packet-test.md`](../../docs/runbooks/zero-packet-test.md).
+On the Pi, the scan in step 3 of that runbook is `sudo systemctl start gnomehome-scan.service`.
+
+**8. Turn on the schedules**
+
+```
+sudo systemctl enable --now gnomehome-syslog.timer gnomehome-discover.timer gnomehome-scan.timer
+systemctl list-timers 'gnomehome-*'
+```
+
+## Still to do on the Pi
+
+- Host firewall (nftables): UDP 514 only from the router, SSH and the dashboard only from the LAN (R-01)
+- LUKS full-disk encryption with Adiantum (NFR-03), key-only SSH
+- Pi-hole installed natively (no Docker on the Pi), per Phase 1
 
 Rust binaries for the Pi are cross-compiled on the Mac with `cross` (generic aarch64, never
 `target-cpu=native`) and copied over. They're never built on the Pi.
