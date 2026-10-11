@@ -1,0 +1,13 @@
+[package]
+name = "gnomehome-playbook"
+description = "GnomeHome playbook engine (automated Blue Team). Stub: core types only."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

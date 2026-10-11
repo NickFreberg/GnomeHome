@@ -20,19 +20,38 @@ setup:
 
 # ---------------------------------------------------------------- quality --
 
-# Run every test
-test: test-py
+# Run every test: Python and Rust
+test: test-py test-rs
 
 # Python tests only (pass extra pytest args, e.g. `just test-py -k guard`)
 test-py *args:
     uv run pytest {{args}}
 
+# Rust tests only
+test-rs:
+    cargo test --workspace
+
 # Lint and format checks (no changes made)
 lint:
     uv run ruff check python
     uv run ruff format --check python
+    cargo fmt --all --check
+    cargo clippy --workspace --all-targets -- -D warnings
 
-# Auto-format Python
+# Auto-format Python and Rust
 fmt:
     uv run ruff check --fix python
     uv run ruff format python
+    cargo fmt --all
+
+# ------------------------------------------------------------------ rust ---
+
+# Build the Rust workspace, then check dependencies for known vulnerabilities (NFR-12)
+build:
+    cargo build --workspace
+    @command -v cargo-audit >/dev/null || { echo "cargo-audit is not installed. Install it once with: cargo install cargo-audit --locked"; exit 1; }
+    cargo audit
+
+# Run the API stub on loopback (address from [api].bind in config/gnomehome.toml)
+serve:
+    cargo run --package gnomehome-api
