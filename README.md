@@ -6,8 +6,8 @@ SOC (inventory, risk scoring, detection, and response) on a $35 computer.
 
 The full project plan, which is the source of truth, is in [`docs/PLAN.md`](docs/PLAN.md).
 
-> **Status:** Phases 1 to 4: inventory, alerts, and vulnerability risk scoring (the minimum complete
-> project), plus DNS and connection behavior monitoring. Developed on an M1 MacBook before the Pi
+> **Status:** Phases 1 to 5: inventory, alerts, and vulnerability risk scoring (the minimum complete
+> project), DNS and connection behavior monitoring, and a plain-English incident log. Developed on an M1 MacBook before the Pi
 > arrives. The Pi's system files are written but not yet run on hardware.
 
 ## What's here so far
@@ -35,6 +35,9 @@ The full project plan, which is the source of truth, is in [`docs/PLAN.md`](docs
 - **Behavior detection**: beaconing (steady check-ins that start after the baseline), bursts of
   machine-generated domain names, lookups of domains on free threat-intel lists, and devices that skip
   Pi-hole for DNS. Each finding becomes a plain-English incident with its MITRE ATT&CK technique.
+- **Plain-English incident log**: every incident says when, which device, what happened, why it matters,
+  and what to do, with its MITRE ATT&CK technique and a confidence. `just incident-report` writes the log as
+  Markdown or JSON, with hostile device names escaped and URLs defanged.
 - **Router connection data**: the router's connection table, read over SSH with a pinned host key and one
   fixed read-only command, becomes per-connection flow events.
 - **Pi deployment files**: systemd timers and services, rsyslog, logrotate, and tmpfiles, rendered from the config
@@ -77,7 +80,7 @@ as untracked. It holds no secrets, so commit it if you want it versioned, or lea
 
 ```
 just setup             # installs Python deps into .venv, creates your config files from the examples
-just test              # every test should pass (about 375 Python tests plus Rust)
+just test              # every test should pass (about 390 Python tests plus Rust)
 ```
 
 Then edit two files, which git ignores:
@@ -119,7 +122,8 @@ It captures packets during a scan and proves nothing reaches the work laptop.
 | `just new-domains` | Domains each device looked up for the first time (`--hours`, `--dev`) |
 | `just flows` | Read the router's connection table over SSH (on the Pi, once router SSH is set up) |
 | `just dnstail` | Follow Pi-hole's log into the database (`--once`, `--dev`, `--log`, `--clock utc`) |
-| `just incidents` | List open incidents: new devices, protected-device drift (`--all`, `--dev`) |
+| `just incidents` | List open incidents in plain English (`--all`, `--dev`) |
+| `just incident-report` | Write the incident log as Markdown or JSON (`--since`, `--format json`, `--out -`, `--all`) |
 | `just incident-resolve <id>` | Mark an incident resolved |
 | `just synth` | Generate synthetic DNS logs, router flows, and router syslog (`--seed`, `--days`) |
 | `just synth-load` | Rebuild the **dev** database from synthetic data, through the real collectors |

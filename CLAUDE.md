@@ -75,8 +75,11 @@ a portfolio piece, so code, docs, and commits should read well to a reviewer.
 - Router syslog job: parser `router_log.py`, job `collectors/router_syslog.py` (checkpointed in
   `ingest_checkpoint`, the same transaction as its events). Protected MACs get `record_protected_presence()`
   (existence only, never updated). Free text goes through `guard.text_mentions_protected()`.
-- Incidents and alerts: `incidents.py` (dedup keys, learning window, drift incidents by label only),
-  `alerts.py` (banners pass text to osascript as arguments only, never device-supplied text).
+- Incidents and alerts: `narrative.py` (one template per detection: when, device, what happened, why it
+  matters, what to do; new detections need a template and a case in `python/tests/test_narrative.py`),
+  `incidents.py` (dedup keys, learning window, drift incidents by label only), `report.py` (Markdown escapes
+  and defangs every value), `alerts.py` (banners pass text to osascript as arguments only, never
+  device-supplied text).
 - Risk: `cpe.py` (CPE 2.2 to 2.3, version comparison, rule matching), `feeds.py` (NVD/EPSS/KEV clients
   behind an `HttpClient` interface; tests use `python/tests/fixtures/feeds/`), `enrich.py` (stores CVE rules,
   matches locally), `risk.py` (model risk-v1, documented in `docs/risk-model.md`). Change the formula, bump
