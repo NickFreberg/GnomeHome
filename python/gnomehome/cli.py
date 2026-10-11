@@ -15,7 +15,7 @@ import socket
 import subprocess
 import sys
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from gnomehome import __version__
@@ -51,6 +51,7 @@ from gnomehome.report import fetch as fetch_incidents
 from gnomehome.report import to_json as report_json
 from gnomehome.report import to_markdown as report_markdown
 from gnomehome.risk import run_scoring
+from gnomehome.summary import from_sqlite as weekly_summary
 from gnomehome.synthetic.generate import generate
 from gnomehome.synthetic.load import load_synthetic
 from gnomehome.timeutil import utc_now
@@ -559,6 +560,19 @@ def cmd_upload(config: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_summary(config: Config, args: argparse.Namespace) -> int:
+    path = _db_path(config, args)
+    if not path.exists():
+        print(f"{path}: not created yet (run `just migrate`)")
+        return 1
+    week_end = date.fromisoformat(args.week_end) if args.week_end else datetime.now(UTC).date()
+    conn = open_database(path)
+    summary = weekly_summary(conn, week_end)
+    conn.close()
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    return 0
+
+
 def cmd_intel(config: Config, args: argparse.Namespace) -> int:
     if not config.threat_feeds:
         print("No [[threat_intel.feeds]] configured.")
@@ -867,6 +881,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     upload.add_argument("--dev", action="store_true", help="upload the synthetic-data export")
     upload.set_defaults(handler=cmd_upload)
+
+    summary = sub.add_parser("summary", help="the weekly summary the AI check-in reads (JSON)")
+    summary.add_argument("--week-end", help="last day of the week, YYYY-MM-DD (default: today)")
+    summary.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
+    summary.set_defaults(handler=cmd_summary)
 
     ml = sub.add_parser("ml", help="device-type guesses and unusual days (Phase 6 logic, locally)")
     ml.add_argument("--days", type=int, default=35, help="how many days of history to use")

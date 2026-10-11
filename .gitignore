@@ -40,3 +40,5 @@ target/
 .vscode/
 *.swp
 infra/main.parameters.json
+databricks/dist/
+databricks/.databricks/

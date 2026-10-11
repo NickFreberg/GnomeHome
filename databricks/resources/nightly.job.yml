@@ -1,0 +1,61 @@
+# The nightly pipeline: bronze, silver, gold features, ML, then the weekly summary.
+# Each task depends on the one before it, so a failure stops the run before anything
+# downstream (Power BI reads gold) can see half-processed data.
+
+resources:
+  jobs:
+    gnomehome_nightly:
+      name: gnomehome-nightly
+      max_concurrent_runs: 1
+      schedule:
+        # 04:30 UTC: after the Pi's export at upload_nightly_at (02:00 by default).
+        quartz_cron_expression: "0 30 4 * * ?"
+        timezone_id: UTC
+      email_notifications:
+        on_failure:
+          - ${var.alert_email}
+      environments:
+        - environment_key: gnomehome
+          spec:
+            client: "2"
+            dependencies:
+              - ../dist/*.whl
+      parameters:
+        - name: storage_account
+          default: ${var.storage_account}
+        - name: catalog
+          default: ${var.catalog}
+      tasks:
+        - task_key: bronze
+          environment_key: gnomehome
+          spark_python_task:
+            python_file: ../src/bronze.py
+            parameters: ["{{job.parameters.storage_account}}", "{{job.parameters.catalog}}"]
+        - task_key: silver
+          depends_on:
+            - task_key: bronze
+          environment_key: gnomehome
+          spark_python_task:
+            python_file: ../src/silver.py
+            parameters: ["{{job.parameters.storage_account}}", "{{job.parameters.catalog}}"]
+        - task_key: gold
+          depends_on:
+            - task_key: silver
+          environment_key: gnomehome
+          spark_python_task:
+            python_file: ../src/gold.py
+            parameters: ["{{job.parameters.storage_account}}", "{{job.parameters.catalog}}"]
+        - task_key: ml
+          depends_on:
+            - task_key: gold
+          environment_key: gnomehome
+          spark_python_task:
+            python_file: ../src/ml.py
+            parameters: ["{{job.parameters.storage_account}}", "{{job.parameters.catalog}}"]
+        - task_key: summary
+          depends_on:
+            - task_key: ml
+          environment_key: gnomehome
+          spark_python_task:
+            python_file: ../src/summary.py
+            parameters: ["{{job.parameters.storage_account}}", "{{job.parameters.catalog}}"]

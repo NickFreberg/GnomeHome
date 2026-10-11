@@ -1,0 +1,40 @@
+# GnomeHome's Databricks Asset Bundle (Phase 6). Deploy with the Databricks CLI:
+#
+#   databricks bundle validate -t dev
+#   databricks bundle deploy -t dev
+#
+# See README.md. Nothing here has been deployed yet.
+
+bundle:
+  name: gnomehome
+
+include:
+  - resources/*.yml
+
+variables:
+  storage_account:
+    description: The storage account from infra/ (deployment output "storageAccount").
+  catalog:
+    description: Unity Catalog catalog that holds the bronze, silver, and gold schemas.
+    default: gnomehome
+  alert_email:
+    description: Where a failed nightly run is reported.
+
+# The gnomehome Python package (the same code the Pi runs) is built as a wheel and
+# installed into the serverless job environment, so the jobs reuse its tested logic.
+artifacts:
+  gnomehome:
+    type: whl
+    path: ..
+    build: uv build --wheel --out-dir databricks/dist
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://adb-0000000000000000.0.azuredatabricks.net   # replace with the infra output
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-0000000000000000.0.azuredatabricks.net

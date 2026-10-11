@@ -30,6 +30,7 @@ import io
 import json
 import shutil
 import sqlite3
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
@@ -186,3 +187,26 @@ def partition_files(out_dir: Path, day: str) -> list[Path]:
     data = sorted(out_dir.glob(f"*/date={day}/part-*.jsonl.gz"))
     manifest = out_dir / MANIFESTS / f"date={day}.json"
     return [*data, manifest] if manifest.exists() else data
+
+
+def verify_partition(manifest: dict[str, Any], read: Callable[[str], bytes]) -> list[str]:
+    """Problems with an exported partition, or an empty list if it's complete and intact.
+
+    ``read`` returns a file's bytes by its manifest path. The silver job calls
+    this before trusting a day: the manifest must say the guard checked every
+    row, and every file must match its recorded SHA-256.
+    """
+    problems = []
+    if manifest.get("export_version") != EXPORT_VERSION:
+        problems.append(f"unknown export version {manifest.get('export_version')!r}")
+    if manifest.get("guard_checked") is not True:
+        problems.append("the manifest doesn't say the protected-asset guard checked every row")
+    for name, entry in manifest.get("tables", {}).items():
+        try:
+            data = read(entry["file"])
+        except (OSError, KeyError) as exc:
+            problems.append(f"{name}: file missing ({exc})")
+            continue
+        if hashlib.sha256(data).hexdigest() != entry.get("sha256"):
+            problems.append(f"{name}: SHA-256 doesn't match the manifest")
+    return problems

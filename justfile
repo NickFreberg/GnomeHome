@@ -95,6 +95,10 @@ export *args:
 upload *args:
     {{gnomehome}} upload {{args}}
 
+# The weekly summary the AI check-in reads, as JSON (--week-end YYYY-MM-DD, --dev)
+summary *args:
+    {{gnomehome}} summary {{args}}
+
 # Device-type guesses and unusual days, run locally (--dev, --days, --leave-one-out)
 ml *args:
     {{gnomehome}} ml {{args}}
@@ -153,15 +157,15 @@ test-rs:
 
 # Lint and format checks (no changes made)
 lint:
-    uv run ruff check python
-    uv run ruff format --check python
+    uv run ruff check python databricks/src
+    uv run ruff format --check python databricks/src
     cargo fmt --all --check
     cargo clippy --workspace --all-targets -- -D warnings
 
 # Auto-format Python and Rust
 fmt:
-    uv run ruff check --fix python
-    uv run ruff format python
+    uv run ruff check --fix python databricks/src
+    uv run ruff format python databricks/src
     cargo fmt --all
 
 # ------------------------------------------------------------------ rust ---
