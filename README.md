@@ -6,9 +6,11 @@ SOC (inventory, risk scoring, detection, and response) on a $35 computer.
 
 The full project plan, which is the source of truth, is in [`docs/PLAN.md`](docs/PLAN.md).
 
-> **Status:** Phases 1 to 7: inventory, alerts, and vulnerability risk scoring (the minimum complete
-> project), DNS and connection behavior monitoring, a plain-English incident log, the cloud and ML layer
-> (written and tested locally, not deployed), and the automated Blue Team (in dry run until you turn it on). Developed on an M1 MacBook before the Pi
+> **Status:** all eight phases are built. Phases 1 to 3 (inventory, alerts, and risk scoring) are the
+> minimum complete project; 4 to 8 add behavior monitoring, a plain-English incident log, the cloud and ML
+> layer, the automated Blue Team (in dry run until you turn it on), and the dashboard with the AI check-in.
+> Everything was developed and tested on synthetic data before the Pi arrived. Nothing has run on the Pi
+> or in Azure yet; [`docs/decisions.md`](docs/decisions.md) lists the open decisions. Developed on an M1 MacBook before the Pi
 > arrives. The Pi's system files are written but not yet run on hardware.
 
 ## What's here so far
@@ -48,6 +50,13 @@ The full project plan, which is the source of truth, is in [`docs/PLAN.md`](docs
   router (only after you approve), and a weekly self-assessment. It checks the protected list before acting
   and again right before an approved action, stays in dry run until you allow each action, and pushes fixed
   messages (never device names) to the Azure mobile app.
+- **Dashboard (Phase 8)**: Rust compiled to WebAssembly (Leptos), served by an Axum API with local accounts,
+  Argon2id passwords, a TOTP code at every login, viewer, analyst, and admin roles, CSRF protection, and
+  every login and action in the audit log. Approving a response needs an admin with a fresh code. HTTPS is
+  required anywhere but loopback. It follows the gnome design system and WCAG 2.2 AA basics.
+- **Weekly AI check-in (Phase 8)**: an Azure Container Apps job reads only the week's curated summary and
+  writes a plain-English check-in. Device-supplied text is fenced as untrusted data, the output follows a
+  strict schema, and any suggestion is re-checked on the Pi and waits for your approval.
 - **Router connection data**: the router's connection table, read over SSH with a pinned host key and one
   fixed read-only command, becomes per-connection flow events.
 - **Pi deployment files**: systemd timers and services, rsyslog, logrotate, and tmpfiles, rendered from the config
@@ -90,7 +99,7 @@ as untracked. It holds no secrets, so commit it if you want it versioned, or lea
 
 ```
 just setup             # installs Python deps into .venv, creates your config files from the examples
-just test              # every test should pass (about 435 Python tests plus Rust)
+just test              # every test should pass (about 455 Python tests plus about 90 Rust tests)
 ```
 
 Then edit two files, which git ignores:
@@ -106,7 +115,20 @@ just doctor            # shows the resolved config and which tools are installed
 just scan-dry          # prints the exact nmap commands; sends nothing
 ```
 
-### 4. Before the first real scan
+### 4. Try the dashboard on synthetic data
+
+```
+rustup target add wasm32-unknown-unknown                 # once: lets Rust build for the browser
+cargo install wasm-bindgen-cli --version 0.2.129 --locked   # once; match the version in Cargo.lock
+just synth && just synth-load && just analyze --dev && just playbook --dev
+just web-build
+just user-add owner admin --dev       # prints a secret: add it to any authenticator app
+just serve --dev                      # then open http://127.0.0.1:8787
+```
+
+Both installs go into your user's `~/.rustup` and `~/.cargo`, not system-wide.
+
+### 5. Before the first real scan
 
 Run the **zero-packet test**: [`docs/runbooks/zero-packet-test.md`](docs/runbooks/zero-packet-test.md).
 It captures packets during a scan and proves nothing reaches the work laptop.
@@ -157,7 +179,11 @@ It captures packets during a scan and proves nothing reaches the work laptop.
 | `just build` | Build Rust and run `cargo audit` |
 | `just build-pi` | Cross-compile the Rust services for the Pi (needs `cross` and Docker) |
 | `just render-units` | Render the Pi's systemd, rsyslog, logrotate, and tmpfiles files from the config |
-| `just serve` | Run the API stub on `127.0.0.1:8787` (try `curl 127.0.0.1:8787/healthz`) |
+| `just web-build` | Build the dashboard (Rust to WebAssembly) into `web/dist` |
+| `just user-add <name> <role>` | Create a dashboard account (`viewer`, `analyst`, `admin`) and its authenticator secret |
+| `just serve` | Run the dashboard on `127.0.0.1:8787` (`--dev` for the synthetic database) |
+| `just web-e2e` | Drive the dashboard in a headless browser (see `crates/gnomehome-web/e2e/dashboard.js`) |
+| `just checkin-fetch` | Import the weekly AI check-in and its suggestions |
 
 ## How the protected-asset list is enforced
 
@@ -190,11 +216,13 @@ for real-looking IPs and MACs.
 | --- | --- |
 | `python/gnomehome/` | Python jobs: config, guard, database, audit log, nmap job, synthetic data |
 | `python/tests/` | Python tests (`just test-py`) |
-| `crates/` | Rust workspace: `gnomehome-core` (guard, audit, DB), `gnomehome-dnstail`, `gnomehome-playbook` (the engine), `gnomehome-api` (Axum) |
+| `crates/` | Rust workspace: `gnomehome-core` (guard, audit, DB), `gnomehome-dnstail`, `gnomehome-playbook` (the engine), `gnomehome-api` (Axum, accounts), `gnomehome-web` (Leptos dashboard) |
 | `playbooks/` | The YAML playbooks, each mapped to MITRE ATT&CK |
 | `config/` | `*.example.*` files with fake values; your real copies are gitignored |
 | `testdata/` | Contract vectors shared by Python and Rust (guard cases, audit hashes) |
 | `deploy/pi/` | Linux-only pieces for the Pi (systemd, capabilities, LUKS, firewall) |
+| `deploy/checkin/` | The AI check-in job's container image |
+| `web/dist/` | The built dashboard (gitignored; `just web-build`) |
 | `infra/` | Bicep for the Azure side (not deployed) |
 | `databricks/` | The Databricks bundle: nightly bronze, silver, gold, ML, and summary jobs (not deployed) |
 | `docs/` | Plan, decisions, audit log spec, risk model, runbooks |

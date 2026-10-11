@@ -24,6 +24,8 @@ user, schedule, or IP is hardcoded.
 | `gnomehome-playbook.service` / `.timer` | `/etc/systemd/system/` | Every minute: the playbook engine (new incidents, approvals, expiries). Dry run unless `[response]` allows more |
 | `gnomehome-assessment.service` / `.timer` | `/etc/systemd/system/` | At `self_assessment_weekly`: the weekly self-assessment playbook |
 | `gnomehome-notify.service` / `.timer` | `/etc/systemd/system/` | Every minute: delivers queued notifications (fixed messages only) |
+| `gnomehome-api.service` | `/etc/systemd/system/` | Always on: the dashboard over HTTPS (`MemoryMax=128M`) |
+| `gnomehome-checkin.service` / `.timer` | `/etc/systemd/system/` | At `checkin_fetch_weekly`: imports the AI check-in; suggestions wait for approval |
 | `gnomehome-export.service` / `.timer` | `/etc/systemd/system/` | Nightly at `upload_nightly_at`: export yesterday (protected rows dropped) and upload it if `[cloud]` is configured |
 | `tmpfiles-gnomehome.conf` | `/etc/tmpfiles.d/gnomehome.conf` | Creates the data, scans, and run folders at boot |
 | `rsyslog-gnomehome.conf` | `/etc/rsyslog.d/30-gnomehome.conf` | Accepts the router's syslog (UDP 514, from `router_ip` only) into `router_syslog_path` |
@@ -117,7 +119,7 @@ Docker container, so Docker Desktop must be running. On the **Mac**:
 ```
 cargo install cross --locked     # once; installs into ~/.cargo/bin (no sudo)
 just build-pi                    # target/aarch64-unknown-linux-gnu/release/
-scp target/aarch64-unknown-linux-gnu/release/gnomehome-{dnstail,playbook} <you>@<pi>:
+scp target/aarch64-unknown-linux-gnu/release/gnomehome-{dnstail,playbook,api} <you>@<pi>:
 ```
 
 Then on the **Pi**:
@@ -125,6 +127,7 @@ Then on the **Pi**:
 ```
 sudo install -D -o root -g root -m 0755 ~/gnomehome-dnstail /opt/gnomehome/bin/gnomehome-dnstail
 sudo install -D -o root -g root -m 0755 ~/gnomehome-playbook /opt/gnomehome/bin/gnomehome-playbook
+sudo install -D -o root -g root -m 0755 ~/gnomehome-api /opt/gnomehome/bin/gnomehome-api
 ls -l /var/log/pihole/pihole.log     # check the group matches pihole_log_group (usually pihole)
 sudo -u gnomehome env GNOMEHOME_CONFIG=/etc/gnomehome/gnomehome.toml /opt/gnomehome/bin/gnomehome-dnstail --once
 ```
@@ -152,6 +155,7 @@ On the Pi, the scan in step 3 of that runbook is `sudo systemctl start gnomehome
 sudo systemctl enable --now gnomehome-dnstail.service
 sudo systemctl enable --now gnomehome-syslog.timer gnomehome-discover.timer gnomehome-scan.timer gnomehome-enrich.timer gnomehome-analyze.timer
 sudo systemctl enable --now gnomehome-playbook.timer gnomehome-assessment.timer gnomehome-notify.timer gnomehome-export.timer
+sudo systemctl enable --now gnomehome-checkin.timer       # once the AI check-in is deployed (infra/README.md)
 systemctl list-timers 'gnomehome-*'
 ```
 
@@ -173,6 +177,30 @@ interface / API**, then **Configure app password**) in `/etc/gnomehome/pihole_ap
 for your approval: `sudo -u gnomehome env GNOMEHOME_CONFIG=/etc/gnomehome/gnomehome.toml
 /opt/gnomehome/bin/gnomehome-playbook approvals`, then `approve <run>` or `deny <run>`.
 
+**8c. The dashboard**
+
+Build it on the Mac (`just web-build`) and copy `web/dist` to `/opt/gnomehome/web/dist` on the Pi. The
+dashboard needs HTTPS on the LAN. Until the private step-ca from the plan exists, a self-signed certificate
+works (your browser will ask you to trust it once):
+
+```
+sudo install -d -o root -g gnomehome -m 0750 /etc/gnomehome/tls
+sudo openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 365 \
+  -subj "/CN=gnomehome" -addext "subjectAltName=IP:<pi-address>" \
+  -keyout /etc/gnomehome/tls/dashboard.key -out /etc/gnomehome/tls/dashboard.crt
+sudo chgrp gnomehome /etc/gnomehome/tls/dashboard.key && sudo chmod 0640 /etc/gnomehome/tls/dashboard.key
+```
+
+In `/etc/gnomehome/gnomehome.toml`, set `[api] bind = "<pi-address>:8443"`, `tls_cert`, `tls_key`, and
+`web_dir = "/opt/gnomehome/web/dist"`. Create your account, then start it:
+
+```
+sudo -u gnomehome env GNOMEHOME_CONFIG=/etc/gnomehome/gnomehome.toml /opt/gnomehome/bin/gnomehome-api user add <you> --role admin
+sudo systemctl enable --now gnomehome-api.service
+```
+
+Open `https://<pi-address>:8443`. Allow port 8443 only from the LAN in the host firewall (below).
+
 **9. Optional: router connection data (FR-08)**
 
 Phases 1 to 3 don't need this (risk R-06: a firmware update can break it). In the router, enable SSH
@@ -191,7 +219,8 @@ anyone else from impersonating the router later. Then `sudo systemctl start gnom
 
 ## Still to do on the Pi
 
-- Host firewall (nftables): UDP 514 only from the router, SSH and the dashboard only from the LAN (R-01)
+- Host firewall (nftables): UDP 514 only from the router, SSH and the dashboard (8443) only from the LAN (R-01)
+- Replace the self-signed dashboard certificate with 24-hour certificates from a private step-ca (plan, "Encryption and keys")
 - LUKS full-disk encryption with Adiantum (NFR-03), key-only SSH
 - Pi-hole installed natively (no Docker on the Pi), per Phase 1
 

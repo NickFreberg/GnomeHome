@@ -14,7 +14,7 @@ small fixes on the first deploy. Run `what-if` first (below), which shows every 
 | `keyvault.bicep` | Key Vault **Standard** (no Managed HSM) with purge protection, a rotating storage key, and an optional Databricks key | NFR-03, R-08 |
 | `storage.bicep` | ADLS Gen2 account (`raw` for the Pi's uploads, `lake` for Delta tables), encrypted with your key, accepting traffic only from your home IP and trusted Azure services; raw files go cool after 30 days and are deleted after 400 | NFR-03 |
 | `databricks.bicep` | Databricks **Premium** workspace (needed for Unity Catalog and serverless SQL) and the access connector Unity Catalog uses to reach storage. No clusters: jobs run serverless | FR-12, R-05, R-08 |
-| `checkin.bicep` | Azure OpenAI (keys disabled, Entra ID only), a Container Apps environment, and the weekly check-in job with a read-only identity | FR-18, R-04 |
+| `checkin.bicep` | Azure OpenAI (keys disabled, Entra ID only), a Container Apps environment, and the weekly check-in job, whose identity reads the summaries and may write only to the `reports` container | FR-18, R-04 |
 
 **Expected cost:** roughly $0 to $50 a month, mostly Databricks serverless (see the plan's cost table). Log
 Analytics can't exceed its daily cap, and nothing runs all the time except storage.
@@ -96,6 +96,31 @@ sudo nano /etc/gnomehome/gnomehome.toml
 Install the Azure mobile app on the iPhone and sign in with `alertEmail`'s account. The push says only that
 GnomeHome needs attention and which kind (an approval, an action taken, a failure, the weekly assessment).
 The secret expires after a year by default; `az ad sp credential reset --id <appId>` makes a new one.
+
+## After deploying: the weekly AI check-in
+
+The job needs a container image. Build it on the Mac from the repository root, push it to a registry,
+and redeploy with `checkinImage` set:
+
+```
+docker build -f deploy/checkin/Dockerfile -t ghcr.io/<you>/gnomehome-checkin:1 .
+docker push ghcr.io/<you>/gnomehome-checkin:1     # or an Azure Container Registry (about $5 a month)
+```
+
+The image holds code only (no secrets, no data), so a public registry is fine. The job signs in with
+its managed identity, reads the summary, writes to the `reports` container, and pushes "check-in ready".
+
+The Pi fetches each report with a read-only token on the `reports` container:
+
+```
+az storage container policy create --account-name <account> --container-name reports \
+  --name gnomehome-read --permissions r --expiry 2027-10-01 --auth-mode key
+az storage container generate-sas --account-name <account> --name reports \
+  --policy-name gnomehome-read --auth-mode key --output tsv > reports_sas
+```
+
+Install it on the Pi as `/etc/gnomehome/reports_sas` (`root:gnomehome`, `0640`) and enable
+`gnomehome-checkin.timer`. Suggestions arrive as incidents that wait for your approval.
 
 ## After deploying: Databricks
 

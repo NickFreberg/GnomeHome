@@ -98,6 +98,13 @@ a portfolio piece, so code, docs, and commits should read well to a reviewer.
   `responders/router_quarantine.py` (fixed iptables rule over the pinned SSH; exit 3 = refused),
   `assessment.py` (weekly), `notify_relay.py` (outbox kinds to fixed messages). Every action stays dry unless
   `[response] mode = "live"` and the action is in `live_actions`; keep it that way in tests and demos.
+- Dashboard and AAA (Phase 8): `crates/gnomehome-api` (`auth.rs`: Argon2id, TOTP, sessions, lockout;
+  `lib.rs`: routes, roles, CSRF, security headers; the API records approval decisions and never acts),
+  `crates/gnomehome-web` (Leptos; `model.rs` holds the tested logic; no inline scripts or styles, the CSP
+  forbids them; `just web-build`, `just web-e2e`). UI follows the design system: risk as a word plus an icon.
+- AI check-in: `python/gnomehome/agent/` (`prompt.py` is the R-04 design: fenced, cleaned data, strict schema, validated
+  output; standard library only), `checkin.py` (Pi-side import re-validates everything). Suggestions may
+  only name `AI_PLAYBOOKS`, kept in sync between `agent/prompt.py` and `AI_PLAYBOOKS` in the playbook engine.
 - Rust: `crates/gnomehome-core` (guard, audit, DB settings, config subset, timestamps; tests apply the real
   migrations via the `testkit` feature), `crates/gnomehome-dnstail` (Pi-hole log tailer: `parse.rs`,
   `pair.rs`, `lib.rs`). Rust reads `MIN_SCHEMA_VERSION` only; Python still owns migrations.
@@ -123,3 +130,4 @@ just --list       # everything else
 - Timestamps are UTC ISO-8601 with milliseconds and a trailing `Z` (`2026-10-11T14:03:00.000Z`).
 - Commit in small, logical steps with clear messages (`feat(scan): ...`, `fix(guard): ...`, `docs: ...`).
 - UI work, from Phase 3 on, follows the design system in the plan: gnome palette tokens, WCAG 2.2 AA, risk always shown as a word plus an icon.
+- The workspace's minimum Rust is 1.88 (let chains are fine). Keep `rust-version` in step with what Leptos needs.
