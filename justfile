@@ -213,8 +213,25 @@ render-units *args:
     {{gnomehome}} render-units {{args}}
 
 # Run the API stub on loopback (address from [api].bind in config/gnomehome.toml)
-serve:
-    cargo run --package gnomehome-api
+serve *args:
+    cargo run --package gnomehome-api -- {{args}} serve
+
+# Create a dashboard account: just user-add <name> <viewer|analyst|admin> [--dev]
+user-add name role *args:
+    cargo run --quiet --package gnomehome-api -- {{args}} user add {{name}} --role {{role}}
+
+# Build the dashboard (Rust to WebAssembly) into web/dist. Needs, once:
+#   rustup target add wasm32-unknown-unknown
+#   cargo install wasm-bindgen-cli --version <the wasm-bindgen version in Cargo.lock> --locked
+web-build:
+    cargo build --release --package gnomehome-web --target wasm32-unknown-unknown
+    rm -rf web/dist && mkdir -p web/dist/pkg
+    wasm-bindgen --target web --no-typescript --out-dir web/dist/pkg target/wasm32-unknown-unknown/release/gnomehome_web.wasm
+    cp crates/gnomehome-web/static/* web/dist/
+
+# Drive the dashboard in a headless browser (see crates/gnomehome-web/e2e/dashboard.js for setup)
+web-e2e:
+    NODE_PATH="$(npm root -g)" node crates/gnomehome-web/e2e/dashboard.js
 
 # Compile and lint the Azure templates (needs the Bicep CLI: `az bicep install`). Deploys nothing.
 infra-check:

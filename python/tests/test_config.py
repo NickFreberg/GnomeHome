@@ -130,3 +130,14 @@ def test_alert_and_syslog_settings(config_path: Path):
 def test_invalid_alert_and_deploy_values(tmp_path: Path, old: str, new: str, message: str):
     with pytest.raises(ConfigError, match=message):
         load_config(write_config(tmp_path, {old: new}))
+
+
+def test_api_settings_for_the_dashboard(tmp_path):
+    from helpers import write_config
+
+    config = load_config(write_config(tmp_path))
+    assert config.api.bind == "127.0.0.1:8787" and config.api.cookie_secure
+    assert config.api.web_dir == "../web/dist"
+    half = write_config(tmp_path, {'web_dir = "../web/dist"': 'tls_cert = "c.pem"'})
+    with pytest.raises(ConfigError, match="both tls_cert and tls_key"):
+        load_config(half)

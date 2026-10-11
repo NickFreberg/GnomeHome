@@ -127,7 +127,15 @@ class ThreatFeed:
 
 @dataclass(frozen=True)
 class ApiConfig:
+    """The Rust dashboard server's settings (gnomehome-api reads them; validated here too)."""
+
     bind: str = "127.0.0.1:8787"
+    #: HTTPS certificate and key (PEM), required when bind isn't loopback.
+    tls_cert: str | None = None
+    tls_key: str | None = None
+    #: The built dashboard (`just web-build` writes web/dist).
+    web_dir: str | None = None
+    cookie_secure: bool = True
 
 
 @dataclass(frozen=True)
@@ -553,8 +561,19 @@ def _parse_threat_intel(table: dict[str, Any], base_dir: Path) -> tuple[ThreatFe
 
 def _parse_api(table: dict[str, Any]) -> ApiConfig:
     where = "[api]"
-    _reject_unknown(table, {"bind"}, where)
-    return ApiConfig(bind=_get(table, "bind", str, ApiConfig().bind, where))
+    d = ApiConfig()
+    _reject_unknown(table, set(d.__dataclass_fields__), where)
+    tls_cert = _get(table, "tls_cert", str, None, where)
+    tls_key = _get(table, "tls_key", str, None, where)
+    if (tls_cert is None) != (tls_key is None):
+        raise ConfigError(f"{where} set both tls_cert and tls_key, or neither")
+    return ApiConfig(
+        bind=_get(table, "bind", str, d.bind, where),
+        tls_cert=tls_cert,
+        tls_key=tls_key,
+        web_dir=_get(table, "web_dir", str, None, where),
+        cookie_secure=_get(table, "cookie_secure", bool, d.cookie_secure, where),
+    )
 
 
 def _parse_synthetic(table: dict[str, Any]) -> SyntheticConfig:

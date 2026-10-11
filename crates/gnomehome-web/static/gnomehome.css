@@ -1,0 +1,151 @@
+/* GnomeHome design system (docs/PLAN.md, "Design system"): a garden gnome standing guard.
+   Every pair below is checked against WCAG 2.2 AA in both themes. */
+
+:root {
+  --bg: #FBF7EF;          /* mushroom cream */
+  --surface: #FFFFFF;
+  --text: #1F1A17;        /* boot black */
+  --text-secondary: #5A4F47; /* soil */
+  --primary: #B3261E;     /* hat red */
+  --secondary: #1F4E9C;   /* tunic blue: links, focus ring */
+  --success: #2E6B3A;     /* garden green */
+  --warning: #8A5A00;     /* lantern amber */
+  --accent: #6B4423;      /* belt brown */
+  --border: #8C7F73;      /* stone */
+  --on-filled: #FFFFFF;   /* beard white on red, blue, green */
+  --beard: #FFFFFF;
+  --font-heading: "Nunito", ui-rounded, system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14181A;        /* night garden */
+    --surface: #1E2427;
+    --text: #F3EEE6;      /* beard white */
+    --text-secondary: #BDB3A7; /* moss gray */
+    --primary: #FF8A7A;
+    --secondary: #8AB4F8;
+    --success: #7DCB8A;
+    --warning: #F2C14E;
+    --accent: #D4A373;
+    --border: #6F7A80;
+    --on-filled: #14181A; /* night text on the lit colors */
+    --beard: #F3EEE6;
+  }
+}
+
+* { box-sizing: border-box; }
+html { font-size: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 1rem/1.5 var(--font-body);   /* at least 16px, line height 1.5 */
+}
+h1, h2, .brand { font-family: var(--font-heading); line-height: 1.25; }
+h1 { font-size: 1.75rem; margin: 0 0 1rem; }
+h2 { font-size: 1.25rem; margin: 0; }
+a { color: var(--secondary); }
+.mono { font-family: var(--font-mono); font-size: 0.875rem; overflow-wrap: anywhere; }
+.muted, .small { color: var(--text-secondary); }
+.small { font-size: 0.875rem; margin: 0.25rem 0 0; }
+
+/* Visible focus ring in tunic blue, at least 2px, on everything interactive. */
+:focus-visible { outline: 3px solid var(--secondary); outline-offset: 2px; }
+
+.skip {
+  position: absolute; left: 1rem; top: -4rem;
+  background: var(--secondary); color: var(--on-filled);
+  padding: 0.75rem 1rem; z-index: 10;
+}
+.skip:focus { top: 1rem; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* Targets: at least 24x24, and 44x44 on small screens. */
+button, input { font: inherit; min-height: 2.75rem; }
+button {
+  border-radius: 0.5rem; padding: 0.5rem 1rem; cursor: pointer;
+  border: 2px solid var(--border); background: var(--surface); color: var(--text);
+}
+button.primary { background: var(--primary); border-color: var(--primary); color: var(--on-filled); }
+button.quiet { background: transparent; }
+button[disabled] { opacity: 0.6; cursor: wait; }
+input {
+  display: block; width: 100%; max-width: 24rem; margin: 0.25rem 0 1rem;
+  padding: 0.5rem 0.75rem; border: 2px solid var(--border); border-radius: 0.5rem;
+  background: var(--surface); color: var(--text);
+}
+label { font-weight: 700; }
+
+.logo { width: 3rem; height: 3rem; flex: none; }
+.logo-hat { fill: var(--primary); }
+.logo-beard { fill: var(--beard); stroke: var(--border); stroke-width: 1.5; }
+.logo-eye { fill: var(--text); }
+.icon {
+  width: 1.25rem; height: 1.25rem; vertical-align: -0.25rem;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+
+.top {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  padding: 1rem 1.5rem; background: var(--surface); border-bottom: 3px solid var(--accent);
+}
+.top .brand { margin: 0; font-size: 1.5rem; }
+.top p { margin: 0; }
+.top .who { margin-left: auto; color: var(--text-secondary); }
+nav { display: flex; gap: 0.5rem; padding: 0.75rem 1.5rem; flex-wrap: wrap; }
+.tab[aria-current="page"] { border-color: var(--secondary); box-shadow: inset 0 -3px 0 var(--secondary); }
+main { padding: 0 1.5rem 3rem; max-width: 72rem; }
+section { margin-bottom: 2rem; }
+
+.login { max-width: 28rem; margin: 3rem auto; padding: 2rem; background: var(--surface); border-radius: 1rem; }
+.login .logo { width: 4rem; height: 4rem; }
+.error { color: var(--primary); font-weight: 700; min-height: 1.5rem; }
+.empty { color: var(--text-secondary); }
+.loading { padding: 2rem; }
+
+/* Risk and severity: a word plus an icon, color only as a third signal. */
+.badge { display: inline-flex; align-items: center; gap: 0.25rem; white-space: nowrap; }
+.risk-low { color: var(--success); }
+.risk-medium { color: var(--warning); }
+.risk-high { color: var(--primary); }
+
+table { border-collapse: collapse; width: 100%; background: var(--surface); }
+caption { text-align: left; padding: 0.5rem 0; color: var(--text-secondary); }
+th, td { text-align: left; vertical-align: top; padding: 0.75rem; border-bottom: 1px solid var(--border); }
+thead th { border-bottom: 2px solid var(--accent); }
+table.bars { max-width: 36rem; }
+.bar { display: block; width: 12rem; height: 0.75rem; }
+.bar rect { fill: currentColor; }
+.counts { list-style: none; display: flex; gap: 1.5rem; padding: 0; flex-wrap: wrap; }
+
+.incident {
+  background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+  border-radius: 0.5rem; padding: 1rem 1.25rem; margin-bottom: 1rem;
+}
+.incident header { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; }
+.incident header p { margin: 0 0 0 auto; }
+.incident dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
+.incident dt { font-weight: 700; color: var(--text-secondary); }
+.incident dd { margin: 0; }
+.inline { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.inline input { width: 8rem; margin: 0; }
+
+.dialog {
+  position: fixed; inset: auto 1rem 1rem auto; max-width: 24rem; z-index: 5;
+  background: var(--surface); border: 3px solid var(--warning); border-radius: 1rem; padding: 1rem 1.25rem;
+}
+
+@media (max-width: 40rem) {
+  .incident dl { grid-template-columns: 1fr; }
+  th, td { padding: 0.5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

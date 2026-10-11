@@ -95,9 +95,14 @@ format = "hosts"
 url = "https://urlhaus.abuse.ch/downloads/hostfile/"
 
 [api]
-# The Rust API stub. Loopback only until TLS and logins exist (Phase 8).
-# 8787 avoids Pi-hole's dashboard on 8080.
+# The dashboard (just serve). 8787 avoids Pi-hole's dashboard on 8080.
+# On loopback it runs without TLS for development. On the Pi, bind to the Pi's LAN
+# address and set tls_cert and tls_key (PEM files, paths relative to this folder):
+# anywhere but loopback, the server refuses to start without HTTPS.
 bind = "127.0.0.1:8787"
+web_dir = "../web/dist"      # built by `just web-build`
+# tls_cert = "/etc/gnomehome/tls/dashboard.crt"
+# tls_key = "/etc/gnomehome/tls/dashboard.key"
 
 [cloud]
 # Phase 6: the nightly export's destination, an ADLS Gen2 storage account made by

@@ -42,3 +42,4 @@ target/
 infra/main.parameters.json
 databricks/dist/
 databricks/.databricks/
+web/dist/

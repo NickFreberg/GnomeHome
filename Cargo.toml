@@ -16,12 +16,13 @@ members = [
     "crates/gnomehome-core",
     "crates/gnomehome-dnstail",
     "crates/gnomehome-playbook",
+    "crates/gnomehome-web",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT"
 publish = false
 
