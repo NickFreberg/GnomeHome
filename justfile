@@ -180,6 +180,12 @@ render-units *args:
 serve:
     cargo run --package gnomehome-api
 
+# Compile and lint the Azure templates (needs the Bicep CLI: `az bicep install`). Deploys nothing.
+infra-check:
+    @command -v bicep >/dev/null || { echo "Bicep CLI not found. Install it with: az bicep install (then add ~/.azure/bin to PATH)"; exit 1; }
+    bicep build infra/main.bicep --stdout > /dev/null
+    bicep lint infra/main.bicep
+
 # Generic aarch64 only: never add target-cpu=native (the Pi's CPU lacks M1 instructions).
 # Cross-compile the Rust services for the Pi (needs `cargo install cross` and Docker running)
 build-pi:

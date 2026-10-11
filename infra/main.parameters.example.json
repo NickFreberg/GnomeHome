@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "homePublicIp": { "value": "203.0.113.7" },
+    "alertEmail": { "value": "owner@example.test" },
+    "monthlyBudget": { "value": 25 },
+    "ownerObjectId": { "value": "" },
+    "databricksAppObjectId": { "value": "" },
+    "checkinImage": { "value": "" }
+  }
+}

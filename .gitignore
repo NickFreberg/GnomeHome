@@ -39,3 +39,4 @@ target/
 .idea/
 .vscode/
 *.swp
+infra/main.parameters.json
