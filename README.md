@@ -99,7 +99,7 @@ as untracked. It holds no secrets, so commit it if you want it versioned, or lea
 
 ```
 just setup             # installs Python deps into .venv, creates your config files from the examples
-just test              # every test should pass (about 455 Python tests plus about 90 Rust tests)
+just test              # every test should pass (about 455 Python tests and 75 Rust tests)
 ```
 
 Then edit two files, which git ignores:
