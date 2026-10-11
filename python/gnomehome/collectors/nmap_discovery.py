@@ -31,12 +31,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from gnomehome.alerts import NEW_DEVICE_MESSAGE, Notifier, notifier_from_config
 from gnomehome.audit import AuditLog
 from gnomehome.collectors.arp_cache import ArpEntry, check_drift, read_arp_cache
 from gnomehome.collectors.inventory import record_hosts
 from gnomehome.config import Config
 from gnomehome.db import open_database, transaction
 from gnomehome.db.scrub import scrub_protected
+from gnomehome.incidents import NewDevice, in_learning_window, new_device_incident
 from gnomehome.nmap_xml import NmapHost, NmapRun, parse_nmap_xml
 from gnomehome.protected import Guard, ProtectedAssets
 from gnomehome.timeutil import utc_now
@@ -49,6 +51,10 @@ RFC1918 = tuple(ipaddress.IPv4Network(n) for n in ("10.0.0.0/8", "172.16.0.0/12"
 
 class ScanRefused(Exception):
     """A precondition failed. Nothing was sent."""
+
+
+class ScanBusy(ScanRefused):
+    """Another scan holds the lock. Timers treat this as a quiet skip (exit code 75)."""
 
 
 class GuardViolation(Exception):
@@ -97,7 +103,10 @@ class ScanResult:
     scan_id: int | None = None
     hosts_up: int = 0
     services_seen: int = 0
-    new_devices: list[tuple[str | None, str, str | None]] = field(default_factory=list)
+    new_devices: list[NewDevice] = field(default_factory=list)
+    #: True while the inventory is still learning its baseline (no new-device alerts).
+    baseline: bool = False
+    incidents_opened: int = 0
     excluded: list[str] = field(default_factory=list)
     commands: list[list[str]] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
@@ -232,7 +241,7 @@ def _scan_lock(run_dir: Path) -> Iterator[None]:
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise ScanRefused("another scan is already running") from None
+            raise ScanBusy("another scan is already running") from None
         yield
 
 
@@ -252,6 +261,7 @@ def run_scan(
     runner: NmapRunner | None = None,
     arp_reader: Callable[[], list[ArpEntry]] | None = None,
     allow_example_values: bool = False,
+    notifier: Notifier | None = None,
     say: Callable[[str], None] = print,
 ) -> ScanResult:
     """Run (or, with ``dry_run``, describe) a discovery or service scan."""
@@ -290,15 +300,19 @@ def run_scan(
         raise ScanRefused("; ".join(result.problems))
 
     runner = runner or SubprocessNmapRunner(paths.nmap_path)
+    notifier = notifier or notifier_from_config(config)
     with _scan_lock(paths.run_dir):
         conn = open_database(paths.db_path)
         try:
-            return _run_locked(
+            result = _run_locked(
                 config, conn, assets, mode, runner, arp_reader, result, say,
                 exclude_file=exclude_file, hosts_file=hosts_file, required=required,
             )  # fmt: skip
         finally:
             conn.close()
+    if result.incidents_opened:
+        notifier.notify(NEW_DEVICE_MESSAGE)
+    return result
 
 
 def _run_locked(
@@ -446,15 +460,21 @@ def _run_locked(
                 stop_if_protected(services, "service")
                 hosts = _merge(live, services)
 
+        seen_at = utc_now()
         with transaction(conn):
+            result.baseline = in_learning_window(conn, seen_at, config.alerts.learning_minutes)
             inventory = record_hosts(
                 conn,
                 guard,
                 hosts,
                 scan_id=scan_id,
-                now=utc_now(),
+                now=seen_at,
                 with_services=mode == "service",
             )
+            if not result.baseline:
+                for device in inventory.new_devices:
+                    if new_device_incident(conn, device, source="nmap") is not None:
+                        result.incidents_opened += 1
         result.hosts_up = inventory.hosts_seen
         result.services_seen = inventory.services_seen
         result.new_devices = inventory.new_devices

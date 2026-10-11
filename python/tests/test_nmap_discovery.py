@@ -25,6 +25,7 @@ from gnomehome.collectors.nmap_discovery import (
     target_problems,
 )
 from gnomehome.config import load_config
+from gnomehome.db import open_database
 from gnomehome.protected import ProtectedAssets, ProtectedListError
 
 NMAP = FIXTURES / "nmap"
@@ -64,11 +65,26 @@ def config(tmp_path: Path):
     return load_config(path)
 
 
-def scan(config, runner=None, arp=(), **kwargs):
+class RecordingNotifier:
+    """Stands in for alerts so tests never pop real notifications."""
+
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    def notify(self, message: str, **_: object) -> None:
+        self.messages.append(message)
+
+
+def scan(config, runner=None, arp=(), notifier=None, **kwargs):
     runner = runner or FakeNmapRunner()
     kwargs.setdefault("allow_example_values", True)  # tests use the fake example list
     result = run_scan(
-        config, runner=runner, arp_reader=lambda: list(arp), say=lambda _: None, **kwargs
+        config,
+        runner=runner,
+        arp_reader=lambda: list(arp),
+        say=lambda _: None,
+        notifier=notifier or RecordingNotifier(),
+        **kwargs,
     )
     return result, runner
 
@@ -323,3 +339,29 @@ def test_scan_targets_are_recorded_in_scan_run(config):
     scan(config)
     targets = db(config).execute("SELECT targets FROM scan_run").fetchone()[0]
     assert json.loads(targets) == ["10.99.0.0/24"]  # hygiene: allow
+
+
+# ------------------------------------------------------------------ new-device alerts
+
+
+def test_first_scan_is_the_baseline_and_raises_no_alerts(config):
+    notifier = RecordingNotifier()
+    result, _ = scan(config, notifier=notifier)
+    assert result.baseline and len(result.new_devices) == 3
+    assert result.incidents_opened == 0 and notifier.messages == []
+    assert db(config).execute("SELECT COUNT(*) FROM incident").fetchone()[0] == 0
+
+
+def test_devices_appearing_after_the_learning_window_raise_one_alert(config):
+    conn = open_database(config.paths.db_path)  # an inventory that started two days ago
+    conn.execute(
+        "INSERT INTO asset (mac, first_seen, last_seen) VALUES "
+        "('00:00:5e:00:53:77', '2026-10-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z')"
+    )
+    conn.close()
+    notifier = RecordingNotifier()
+    result, _ = scan(config, notifier=notifier)
+    assert not result.baseline and result.incidents_opened == 3
+    assert len(notifier.messages) == 1  # one banner per run, not per device
+    titles = [r[0] for r in db(config).execute("SELECT title FROM incident ORDER BY id")]
+    assert "New device on the network (Example Router Co)" in titles

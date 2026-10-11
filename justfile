@@ -70,6 +70,14 @@ migrate *args:
 db-status *args:
     {{gnomehome}} db-status {{args}}
 
+# List open incidents: new devices, protected-device drift (--all, --dev)
+incidents *args:
+    {{gnomehome}} incidents {{args}}
+
+# Mark an incident resolved, e.g. `just incident-resolve 3`
+incident-resolve id *args:
+    {{gnomehome}} incident-resolve {{id}} {{args}}
+
 # Recompute the audit log's hash chain and report any tampering
 audit-verify *args:
     {{gnomehome}} audit-verify {{args}}

@@ -21,19 +21,24 @@ from gnomehome.audit import verify as verify_audit
 from gnomehome.collectors.nmap_discovery import (
     GuardViolation,
     NmapFailed,
+    ScanBusy,
     ScanRefused,
     ScanResult,
     run_scan,
 )
 from gnomehome.config import Config, ConfigError, load_config, platform_mismatch
-from gnomehome.db import open_database
+from gnomehome.db import open_database, transaction
 from gnomehome.db.migrate import MigrationError, current_version
 from gnomehome.db.scrub import scrub_protected
+from gnomehome.incidents import list_incidents, resolve_incident
 from gnomehome.protected import ProtectedAssets, ProtectedListError, load_guard
 from gnomehome.synthetic.generate import generate
 from gnomehome.synthetic.load import load_synthetic
 
 log = logging.getLogger("gnomehome")
+
+#: Exit code for "another run holds the lock" (EX_TEMPFAIL). systemd units treat it as success.
+EXIT_BUSY = 75
 
 
 # --------------------------------------------------------------------------
@@ -189,6 +194,35 @@ def cmd_db_status(config: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_incidents(config: Config, args: argparse.Namespace) -> int:
+    path = _db_path(config, args)
+    if not path.exists():
+        print(f"{path}: not created yet (run `just migrate`)")
+        return 1
+    conn = open_database(path)
+    rows = list_incidents(conn, include_closed=args.all)
+    conn.close()
+    if not rows:
+        print("All quiet in the garden: no open incidents." if not args.all else "No incidents.")
+        return 0
+    for row in rows:
+        # Severity is always a word, never color alone (design system).
+        print(f"#{row['id']}  {row['severity'].upper():<8} {row['status']:<12} {row['created_at']}")
+        print(f"    {row['title']}")
+        print(f"    {row['summary']}")
+    return 0
+
+
+def cmd_incident_resolve(config: Config, args: argparse.Namespace) -> int:
+    path = _db_path(config, args)
+    conn = open_database(path)
+    with transaction(conn):
+        done = resolve_incident(conn, args.id, audit=AuditLog(conn), actor="user:local")
+    conn.close()
+    print(f"Incident #{args.id} resolved." if done else f"No open incident #{args.id}.")
+    return 0 if done else 1
+
+
 def cmd_audit_verify(config: Config, args: argparse.Namespace) -> int:
     path = _db_path(config, args)
     if not path.exists():
@@ -243,6 +277,9 @@ def _scan(config: Config, args: argparse.Namespace, mode: str) -> int:
     except ProtectedListError as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 1
+    except ScanBusy as exc:
+        print(f"Skipped: {exc}.")
+        return EXIT_BUSY
     except ScanRefused as exc:
         print(f"REFUSED (nothing was sent): {exc}", file=sys.stderr)
         return 1
@@ -257,10 +294,16 @@ def _scan(config: Config, args: argparse.Namespace, mode: str) -> int:
         return 0
     print(f"\nScan {result.scan_id} done: {result.hosts_up} device(s) up", end="")
     print(f", {result.services_seen} open service(s)." if mode == "service" else ".")
-    if result.new_devices:
-        print(f"New device(s) ({len(result.new_devices)}):")
-        for ip, mac, vendor in result.new_devices:
-            print(f"  {ip or '-':<15} {mac}  {vendor or 'unknown vendor'}")
+    if result.baseline and result.new_devices:
+        print(
+            f"Baseline: recorded {len(result.new_devices)} device(s) while the inventory is still "
+            f"learning ({config.alerts.learning_minutes} min). Devices that appear after that "
+            "raise alerts."
+        )
+    elif result.new_devices:
+        print(f"New device(s) ({len(result.new_devices)}), see `just incidents`:")
+        for device in result.new_devices:
+            print(f"  {device.ip or '-':<15} {device.mac}  {device.vendor or 'unknown vendor'}")
     else:
         print("No new devices.")
     return 0
@@ -371,6 +414,14 @@ def build_parser() -> argparse.ArgumentParser:
     audit = sub.add_parser("audit-verify", help="recompute and check the audit log hash chain")
     audit.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
     audit.set_defaults(handler=cmd_audit_verify)
+    incidents = sub.add_parser("incidents", help="list open incidents (alerts)")
+    incidents.add_argument("--all", action="store_true", help="include resolved incidents")
+    incidents.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
+    incidents.set_defaults(handler=cmd_incidents)
+    resolve = sub.add_parser("incident-resolve", help="mark an incident resolved")
+    resolve.add_argument("id", type=int)
+    resolve.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
+    resolve.set_defaults(handler=cmd_incident_resolve)
 
     for name, handler, text in (
         ("scan", cmd_scan, "host discovery plus service scan (nmap)"),
