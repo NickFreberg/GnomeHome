@@ -16,6 +16,7 @@ from helpers import EXAMPLE_PROTECTED
 
 from gnomehome.db import open_database
 from gnomehome.protected import load_guard
+from gnomehome.router_log import parse_dhcp, parse_syslog_line
 from gnomehome.synthetic.generate import generate
 from gnomehome.synthetic.load import load_synthetic
 
@@ -176,6 +177,9 @@ def test_protected_laptop_traffic_exists_in_raw_data(dataset: Path):
 # ------------------------------------------------------------------ loading through the guard
 
 
+LAPTOP_IDS = ("00:00:5e:00:53:01", "00:00:5e:00:53:02", "192.0.2.10")
+
+
 def test_load_drops_every_protected_record(tmp_path: Path, dataset: Path):
     conn = open_database(tmp_path / "dev.sqlite3")
     guard = load_guard(EXAMPLE_PROTECTED)
@@ -183,21 +187,53 @@ def test_load_drops_every_protected_record(tmp_path: Path, dataset: Path):
 
     queries = _jsonl(dataset / "dns" / "queries.jsonl")
     flows = _jsonl(dataset / "flows" / "flows.jsonl")
+    router_lines = (dataset / "router" / "syslog.log").read_text().splitlines()
     protected_dns = sum(q["label"] == "protected" for q in queries)
     protected_flows = sum(f["label"] == "protected" for f in flows)
-    assert result.dropped_protected == 1 + protected_dns + protected_flows  # +1: the asset
+    protected_router = sum(any(i in line for i in LAPTOP_IDS) for line in router_lines)
+    assert result.dropped_protected == protected_dns + protected_flows + protected_router
     assert result.dns_events == len(queries) - protected_dns
     assert result.flow_events == len(flows) - protected_flows
 
-    for column in ("src_ip", "dst_ip"):
-        hits = conn.execute(f"SELECT COUNT(*) FROM event WHERE {column} = '192.0.2.10'").fetchone()[
-            0
-        ]
-        assert hits == 0
-    macs = {r[0] for r in conn.execute("SELECT mac FROM asset")}
-    assert "00:00:5e:00:53:01" not in macs
-    assert len(macs) == result.assets == 12
+    every_row = " ".join(
+        str(value)
+        for table in ("event", "incident", "audit_log")
+        for row in conn.execute(f"SELECT * FROM {table}")
+        for value in tuple(row)
+    )
+    for identifier in (*LAPTOP_IDS, "192.0.2.88", "WORK-LAPTOP"):
+        assert identifier not in every_row
+
+    # The inventory comes from router DHCP: 12 normal devices, plus the laptop's two
+    # adapters recorded as existence only.
+    normal = conn.execute("SELECT COUNT(*) FROM asset WHERE protected = 0").fetchone()[0]
+    assert normal == result.assets == 12
+    protected = conn.execute("SELECT * FROM asset WHERE protected = 1").fetchall()
+    assert sorted(r["mac"] for r in protected) == ["00:00:5e:00:53:01", "00:00:5e:00:53:02"]
+    assert all(r["last_ip"] is None and r["hostname"] is None for r in protected)
     assert conn.execute("SELECT COUNT(*) FROM event WHERE synthetic = 0").fetchone()[0] == 0
+
+
+def test_load_raises_the_expected_incidents(tmp_path: Path, dataset: Path):
+    conn = open_database(tmp_path / "dev.sqlite3")
+    result = load_synthetic(conn, load_guard(EXAMPLE_PROTECTED), dataset)
+    labels = json.loads((dataset / "labels.json").read_text())["scenarios"]
+    assert result.syslog.new_device_incidents == 1
+    assert result.syslog.drift_incidents == 1
+    incidents = {r["detection"]: r for r in conn.execute("SELECT * FROM incident")}
+    new_device = json.loads(incidents["inventory.new_device"]["evidence"])
+    assert new_device["mac"] == labels["new_device"]["mac"]
+    drift = json.loads(incidents["guard.protected_drift"]["evidence"])
+    assert drift["label"] == "Work laptop"
+    assert drift["kind"] == "protected_mac_at_unlisted_ip"
+
+
+def test_router_log_lines_all_parse(dataset: Path):
+    lines = (dataset / "router" / "syslog.log").read_text().splitlines()
+    assert lines
+    assert all(parse_syslog_line(line) is not None for line in lines)
+    dhcp = [parse_dhcp(parse_syslog_line(line)) for line in lines]
+    assert sum(d is not None and d.kind == "DHCPACK" for d in dhcp) >= 13
 
 
 def test_labels_are_never_stored(tmp_path: Path, dataset: Path):

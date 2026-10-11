@@ -34,7 +34,7 @@ from gnomehome.db import open_database, transaction
 from gnomehome.db.migrate import MigrationError, current_version
 from gnomehome.db.scrub import scrub_protected
 from gnomehome.incidents import list_incidents, resolve_incident
-from gnomehome.protected import Guard, ProtectedAssets, ProtectedListError, load_guard
+from gnomehome.protected import Guard, ProtectedAssets, ProtectedListError
 from gnomehome.synthetic.generate import generate
 from gnomehome.synthetic.load import load_synthetic
 
@@ -390,16 +390,25 @@ def cmd_synth_load(config: Config, args: argparse.Namespace) -> int:
     if not (data_dir / "household.json").exists():
         print(f"No synthetic data in {data_dir}. Run `just synth` first.", file=sys.stderr)
         return 1
+    dev_db = config.paths.dev_db_path
+    if dev_db.resolve() == config.paths.db_path.resolve():
+        print("REFUSED: dev_db_path is the real database. Synthetic data never goes there.",
+              file=sys.stderr)  # fmt: skip
+        return 1
     try:
         assets = ProtectedAssets.load(config.paths.protected_assets)
     except ProtectedListError as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 1
-    conn = open_database(config.paths.dev_db_path)
+    # The dev database holds only synthetic data, so each load starts it fresh:
+    # reloading never duplicates rows.
+    for suffix in ("", "-wal", "-shm"):
+        Path(f"{dev_db}{suffix}").unlink(missing_ok=True)
+    conn = open_database(dev_db)
     audit = AuditLog(conn)
     scrub_protected(conn, assets, audit=audit, actor="system:synthetic")
-    guard = load_guard(config.paths.protected_assets, audit=audit, actor="system:synthetic")
-    result = load_synthetic(conn, guard, data_dir)
+    guard = Guard(assets, audit=audit, actor="system:synthetic")
+    result = load_synthetic(conn, guard, data_dir, learning_minutes=config.alerts.learning_minutes)
     audit.append(
         actor="system:synthetic",
         action="synthetic.load",
@@ -409,13 +418,20 @@ def cmd_synth_load(config: Config, args: argparse.Namespace) -> int:
             "assets": result.assets,
             "dns_events": result.dns_events,
             "flow_events": result.flow_events,
+            "dhcp_events": result.syslog.dhcp_events,
+            "syslog_events": result.syslog.syslog_events,
             "dropped_protected": result.dropped_protected,
         },
     )
     conn.close()
-    print(f"Loaded into the dev database {config.paths.dev_db_path}:")
-    print(f"  {result.assets} assets, {result.dns_events} DNS events, {result.flow_events} flows")
+    send_alerts(result.syslog, notifier_from_config(config, log_only=True))
+    print(f"Loaded into the dev database {dev_db} (rebuilt fresh):")
+    print(f"  {result.assets} assets (from router DHCP), {result.dns_events} DNS events, "
+          f"{result.flow_events} flows, {result.syslog.dhcp_events} DHCP and "
+          f"{result.syslog.syslog_events} other router events")  # fmt: skip
     print(f"  {result.dropped_protected} record(s) dropped by the protected-asset guard")
+    print(f"  {result.syslog.new_device_incidents} new-device and "
+          f"{result.syslog.drift_incidents} drift incident(s): `just incidents --dev`")  # fmt: skip
     return 0
 
 

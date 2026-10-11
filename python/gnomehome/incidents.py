@@ -104,7 +104,7 @@ def new_device_incident(conn: sqlite3.Connection, device: NewDevice, *, source: 
     parts = [
         f"A device GnomeHome has not seen before joined the network (first seen "
         f"{device.seen_at}, via {source}). IP {device.ip or 'unknown'}, MAC {device.mac}, "
-        f"vendor {vendor}."
+        f"vendor {device.vendor or 'unknown'}."
     ]
     if device.hostname:
         parts.append(

@@ -1,10 +1,15 @@
 """Load a synthetic dataset into the dev database, through the protected-asset guard.
 
-This plays the part the real collectors will play later: every record passes
-the guard before storage, so the protected work laptop's queries and flows
-are dropped (flows match on source or destination). Rows are marked
-``synthetic = 1`` and ``source = 'synthetic'``. Ground-truth labels are never
-stored, so detection code can't peek at them.
+This runs the same code the real collectors use, wherever it exists:
+
+* The router syslog goes through the real router syslog job, so the inventory
+  is built from DHCP, and new-device and drift incidents are raised exactly
+  as they will be on the Pi.
+* DNS queries and flows pass the guard before storage (flows match on source
+  or destination) and attach to assets by IP.
+
+Rows are marked ``synthetic = 1`` and ``source = 'synthetic'``. Ground-truth
+labels are never stored, so detection code can't peek at them.
 """
 
 from __future__ import annotations
@@ -15,8 +20,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from gnomehome.collectors.router_syslog import IngestResult, ingest_router_syslog
 from gnomehome.db import transaction
-from gnomehome.identifiers import is_locally_administered
 from gnomehome.protected import Guard
 
 
@@ -25,6 +30,7 @@ class LoadResult:
     assets: int
     dns_events: int
     flow_events: int
+    syslog: IngestResult
     dropped_protected: int
 
 
@@ -35,29 +41,25 @@ def _jsonl(path: Path) -> Iterator[dict]:
                 yield json.loads(line)
 
 
-def load_synthetic(conn: sqlite3.Connection, guard: Guard, data_dir: Path) -> LoadResult:
-    household = json.loads((data_dir / "household.json").read_text())
+def load_synthetic(
+    conn: sqlite3.Connection, guard: Guard, data_dir: Path, *, learning_minutes: int = 60
+) -> LoadResult:
+    syslog = ingest_router_syslog(
+        conn,
+        guard,
+        data_dir / "router" / "syslog.log",
+        learning_minutes=learning_minutes,
+        checkpoint=f"synthetic:{data_dir.name}",
+        source="synthetic",
+        synthetic=True,
+    )
     with transaction(conn):
-        ip_to_asset: dict[str, int] = {}
-        for device in guard.filter(household, ips=lambda d: (d["ip"],), macs=lambda d: (d["mac"],)):
-            conn.execute(
-                """
-                INSERT INTO asset (mac, mac_randomized, device_type, last_ip, first_seen, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT (mac) DO UPDATE SET last_ip = excluded.last_ip
-                """,
-                (
-                    device["mac"],
-                    int(is_locally_administered(device["mac"])),
-                    device["kind"],
-                    device["ip"],
-                    device["first_seen"],
-                    device["first_seen"],
-                ),
+        ip_to_asset = {
+            row[1]: row[0]
+            for row in conn.execute(
+                "SELECT id, last_ip FROM asset WHERE protected = 0 AND last_ip IS NOT NULL"
             )
-            row = conn.execute("SELECT id FROM asset WHERE mac = ?", (device["mac"],)).fetchone()
-            ip_to_asset[device["ip"]] = row[0]
-
+        }
         queries = guard.filter(
             _jsonl(data_dir / "dns" / "queries.jsonl"),
             ips=lambda q: (q["client_ip"],),
@@ -111,5 +113,6 @@ def load_synthetic(conn: sqlite3.Connection, guard: Guard, data_dir: Path) -> Lo
         assets=len(ip_to_asset),
         dns_events=len(dns_rows),
         flow_events=len(flow_rows),
-        dropped_protected=guard.passive_drops,
+        syslog=syslog,
+        dropped_protected=guard.passive_drops + syslog.dropped_protected,
     )

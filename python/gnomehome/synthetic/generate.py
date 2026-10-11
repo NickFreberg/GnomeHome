@@ -9,6 +9,7 @@ Layout::
     <out>/dns/queries.jsonl           one normalized record per query
     <out>/flows/conntrack_snapshots.txt   raw, as the router's table would read
     <out>/flows/flows.jsonl           one normalized record per connection
+    <out>/router/syslog.log           raw, as rsyslog on the Pi writes the router's syslog
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from gnomehome.synthetic import dns, flows
+from gnomehome.synthetic import dns, flows, router
 from gnomehome.synthetic.household import build_household
 from gnomehome.timeutil import format_ts
 
@@ -31,6 +32,7 @@ class GenerateResult:
     queries: int
     flows: int
     snapshots: int
+    router_lines: int
 
 
 def generate(
@@ -53,8 +55,12 @@ def generate(
         random.Random(f"{seed}:flows"), devices, queries, start, hours
     )
 
-    (out_dir / "dns").mkdir(parents=True, exist_ok=True)
-    (out_dir / "flows").mkdir(parents=True, exist_ok=True)
+    router_lines, router_scenarios = router.generate_router_log(
+        random.Random(f"{seed}:router"), devices, start, hours
+    )
+
+    for sub in ("dns", "flows", "router"):
+        (out_dir / sub).mkdir(parents=True, exist_ok=True)
 
     household = [
         {**d.to_dict(), "first_seen": format_ts(start + span * d.joins_at)} for d in devices
@@ -70,6 +76,7 @@ def generate(
         "scenarios": {
             **dns_scenarios,
             **flow_scenarios,
+            **router_scenarios,
             "new_device": {
                 "device": new_device.name,
                 "mac": new_device.mac,
@@ -106,7 +113,13 @@ def generate(
         for flow in flow_list:
             out.write(json.dumps(flows.flow_record(flow), sort_keys=True) + "\n")
 
-    return GenerateResult(out_dir, len(devices), len(queries), len(flow_list), snapshots)
+    with open(out_dir / "router" / "syslog.log", "w") as out:
+        for line in router.router_log_lines(router_lines):
+            out.write(line + "\n")
+
+    return GenerateResult(
+        out_dir, len(devices), len(queries), len(flow_list), snapshots, len(router_lines)
+    )
 
 
 def _write_json(path: Path, value: object) -> None:
