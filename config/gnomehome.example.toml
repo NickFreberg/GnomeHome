@@ -51,7 +51,7 @@ syslog_every_minutes = 1           # read new router syslog lines (DHCP: new dev
 analyze_every_minutes = 60         # DNS analytics: beaconing, DGA bursts, threat intel matches
 flows_every_minutes = 1            # read the router's connection table over SSH (Pi)
 enrich_daily_at = "03:30"          # CVE/EPSS/KEV refresh (Phase 3)
-upload_nightly_at = "02:00"        # ship data to Azure (Phase 6)
+upload_nightly_at = "02:00"        # export yesterday's data and ship it to Azure (Phase 6)
 retention_daily_at = "04:00"       # delete data older than [retention]
 self_assessment_weekly = "Sun 09:00"
 
@@ -99,6 +99,13 @@ url = "https://urlhaus.abuse.ch/downloads/hostfile/"
 # 8787 avoids Pi-hole's dashboard on 8080.
 bind = "127.0.0.1:8787"
 
+[cloud]
+# Phase 6: the nightly export's destination, an ADLS Gen2 storage account made by
+# infra/ (see infra/README.md). Leave storage_account empty to export locally only.
+# The SAS token lives in the file named by storage_sas_file, never in this file.
+storage_account = ""
+container = "raw"
+
 [synthetic]
 # Fake DNS and flow data for building later phases without real traffic.
 seed = 42                  # same seed, same data, every time
@@ -131,6 +138,7 @@ osascript_path = "/usr/bin/osascript"          # macOS's built-in tool for notif
 # Optional: a file containing your free NVD API key (https://nvd.nist.gov/developers/request-an-api-key).
 # Keep it out of git; this path is outside the repo. Without a key, lookups are just slower.
 nvd_api_key_file = "~/.config/gnomehome/nvd_api_key"
+storage_sas_file = "~/.config/gnomehome/storage_sas"   # optional; see infra/README.md
 # router_syslog_path is not set: the router sends its syslog to the Pi.
 # On the Mac, `just synth-load` exercises the same code with synthetic syslog.
 
@@ -158,6 +166,7 @@ install_dir = "/opt/gnomehome"                 # where the repo is checked out o
 service_user = "gnomehome"                     # unprivileged user the jobs run as
 config_file = "/etc/gnomehome/gnomehome.toml"  # this file's location on the Pi
 nvd_api_key_file = "/etc/gnomehome/nvd_api_key"   # optional, root:gnomehome 0640
+storage_sas_file = "/etc/gnomehome/storage_sas"   # optional, root:gnomehome 0640 (Phase 6 upload)
 # Router SSH for the connection-table pull (enable SSH, LAN only, key login, in the
 # router: Administration > System). The key must be owned by the service user, mode 0600.
 ssh_path = "/usr/bin/ssh"

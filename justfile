@@ -87,6 +87,14 @@ dnstail *args:
     cargo run --quiet --release --package gnomehome-dnstail -- {{args}}
 
 # Domains each device looked up for the first time (--hours N, --dev)
+# Write yesterday's data for the cloud, protected rows dropped (--day YYYY-MM-DD, --dev)
+export *args:
+    {{gnomehome}} export {{args}}
+
+# Upload an exported day to Azure storage: a dry run unless you add --send
+upload *args:
+    {{gnomehome}} upload {{args}}
+
 # Device-type guesses and unusual days, run locally (--dev, --days, --leave-one-out)
 ml *args:
     {{gnomehome}} ml {{args}}

@@ -73,6 +73,7 @@ def render_pi_files(
         "analyze_every": str(config.schedules.analyze_every_minutes),
         "flows_every": str(config.schedules.flows_every_minutes),
         "enrich_at": config.schedules.enrich_daily_at,
+        "upload_at": config.schedules.upload_nightly_at,
         "syslog_days": str(config.retention.syslog_days),
         "tmpfiles_lines": "\n".join(
             f"d {d} 0750 {p.service_user} {p.service_user} -" for d in writable_dirs

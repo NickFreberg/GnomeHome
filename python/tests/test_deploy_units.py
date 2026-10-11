@@ -27,6 +27,7 @@ def test_every_template_renders_with_no_placeholders_left(files):
         "gnomehome-analyze.service", "gnomehome-analyze.timer",
         "gnomehome-flows.service", "gnomehome-flows.timer",
         "gnomehome-dnstail.service",
+        "gnomehome-export.service", "gnomehome-export.timer",
         "tmpfiles-gnomehome.conf", "rsyslog-gnomehome.conf", "logrotate-gnomehome",
     }  # fmt: skip
     for name, content in files.items():
@@ -48,7 +49,7 @@ def test_raw_socket_rights_only_for_the_nmap_jobs(files):
         unit = files[f"gnomehome-{job}.service"]
         assert "AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN" in unit
         assert "SuccessExitStatus=75" in unit
-    for job in ("syslog", "analyze", "flows", "dnstail", "enrich"):
+    for job in ("syslog", "analyze", "flows", "dnstail", "enrich", "export"):
         unit = files[f"gnomehome-{job}.service"]
         assert "AmbientCapabilities" not in unit, job
         assert "CapabilityBoundingSet=\n" in unit, job
@@ -140,3 +141,10 @@ def test_enrichment_runs_daily_and_scores_even_if_a_feed_fails(files):
     assert "ExecStart=-/opt/gnomehome/.venv/bin/gnomehome intel" in unit
     assert "ExecStart=/opt/gnomehome/.venv/bin/gnomehome score" in unit
     assert "AmbientCapabilities" not in unit
+
+
+def test_export_runs_nightly_and_uploads_only_when_configured(files):
+    assert "OnCalendar=*-*-* 02:00:00" in files["gnomehome-export.timer"]
+    unit = files["gnomehome-export.service"]
+    assert "ExecStart=/opt/gnomehome/.venv/bin/gnomehome export\n" in unit
+    assert "ExecStart=/opt/gnomehome/.venv/bin/gnomehome upload --send\n" in unit

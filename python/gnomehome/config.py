@@ -168,12 +168,22 @@ class PlatformConfig:
     #: A file holding the free NVD API key (never in git). Optional: without it,
     #: lookups are slower (NVD allows 5 requests per 30 seconds).
     nvd_api_key_file: Path | None = None
+    #: A file holding the SAS token for the nightly upload (never in git). Optional.
+    storage_sas_file: Path | None = None
     # Router SSH, for the connection-table pull (FR-08). All optional.
     ssh_path: Path | None = None
     router_ssh_user: str | None = None
     router_ssh_port: int = 22
     router_ssh_key: Path | None = None
     router_known_hosts: Path | None = None
+
+
+@dataclass(frozen=True)
+class CloudConfig:
+    """Phase 6: where the nightly export goes. Nothing uploads until this is filled in."""
+
+    storage_account: str | None = None
+    container: str = "raw"
 
 
 @dataclass(frozen=True)
@@ -191,6 +201,7 @@ class Config:
     threat_feeds: tuple[ThreatFeed, ...] = ()
     api: ApiConfig = field(default_factory=ApiConfig)
     synthetic: SyntheticConfig = field(default_factory=SyntheticConfig)
+    cloud: CloudConfig = field(default_factory=CloudConfig)
     #: Every platform table, so the Pi's files can be rendered on the Mac.
     platforms: dict[str, PlatformConfig] = field(default_factory=dict)
 
@@ -242,6 +253,7 @@ def parse_config(data: dict[str, Any], config_path: Path) -> Config:
             "threat_intel",
             "api",
             "synthetic",
+            "cloud",
             "platforms",
         },
         "top level",
@@ -276,6 +288,7 @@ def parse_config(data: dict[str, Any], config_path: Path) -> Config:
         threat_feeds=_parse_threat_intel(_table(data, "threat_intel"), base_dir),
         api=_parse_api(_table(data, "api")),
         synthetic=_parse_synthetic(_table(data, "synthetic")),
+        cloud=_parse_cloud(_table(data, "cloud")),
         platforms=parsed,
     )
 
@@ -348,6 +361,23 @@ def _parse_schedules(table: dict[str, Any]) -> SchedulesConfig:
         raise ConfigError(f'{where} self_assessment_weekly must look like "Sun 09:00"')
     values["self_assessment_weekly"] = weekly
     return SchedulesConfig(**values)
+
+
+_STORAGE_ACCOUNT_RE = re.compile(r"^[a-z0-9]{3,24}$")
+_CONTAINER_RE = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){2,62}$")
+
+
+def _parse_cloud(table: dict[str, Any]) -> CloudConfig:
+    where = "[cloud]"
+    d = CloudConfig()
+    _reject_unknown(table, set(d.__dataclass_fields__), where)
+    account = _get(table, "storage_account", str, None, where) or None
+    if account is not None and not _STORAGE_ACCOUNT_RE.match(account):
+        raise ConfigError(f"{where} storage_account must be 3-24 lowercase letters and digits")
+    container = _get(table, "container", str, d.container, where)
+    if not _CONTAINER_RE.match(container):
+        raise ConfigError(f"{where} container {container!r} is not a valid container name")
+    return CloudConfig(storage_account=account, container=container)
 
 
 def _parse_retention(table: dict[str, Any]) -> RetentionConfig:
@@ -501,6 +531,7 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
             "config_file",
             "pihole_log_group",
             "nvd_api_key_file",
+            "storage_sas_file",
             "ssh_path",
             "router_ssh_user",
             "router_ssh_port",
@@ -585,6 +616,7 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
         config_file=optional_absolute("config_file"),
         pihole_log_group=pihole_log_group,
         nvd_api_key_file=optional_path("nvd_api_key_file"),
+        storage_sas_file=optional_path("storage_sas_file"),
         ssh_path=optional_absolute("ssh_path"),
         router_ssh_user=_ssh_user(table, where),
         router_ssh_port=_int_range(table, "router_ssh_port", 22, 1, 65535, where),

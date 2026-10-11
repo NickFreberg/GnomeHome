@@ -1,0 +1,21 @@
+# Rendered by `just render-units` from config/gnomehome.toml. Edit the config, not this file.
+[Unit]
+Description=GnomeHome nightly export (protected rows dropped) and upload to Azure storage
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${user}
+Group=${user}
+Environment=GNOMEHOME_CONFIG=${config_file}
+ExecStart=${install_dir}/.venv/bin/gnomehome export
+# Uploads only when [cloud] storage_account and storage_sas_file are set; otherwise a no-op.
+ExecStart=${install_dir}/.venv/bin/gnomehome upload --send
+TimeoutStartSec=1h
+# Talks to Azure Storage over HTTPS; needs no capabilities.
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=${writable}
+ReadOnlyPaths=${readonly}
+${hardening}

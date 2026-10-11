@@ -15,6 +15,7 @@ import socket
 import subprocess
 import sys
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from gnomehome import __version__
@@ -40,6 +41,7 @@ from gnomehome.db.migrate import MigrationError, current_version
 from gnomehome.db.scrub import scrub_protected
 from gnomehome.deploy_units import RenderError, render_pi_files, write_files
 from gnomehome.enrich import run_enrichment
+from gnomehome.export import export_day, yesterday
 from gnomehome.feeds import UrllibClient
 from gnomehome.incidents import list_incidents, resolve_incident
 from gnomehome.ml.local import run_local
@@ -52,6 +54,7 @@ from gnomehome.risk import run_scoring
 from gnomehome.synthetic.generate import generate
 from gnomehome.synthetic.load import load_synthetic
 from gnomehome.timeutil import utc_now
+from gnomehome.upload import BlobClient, UploadError, load_sas, plan_uploads, upload_day
 
 log = logging.getLogger("gnomehome")
 
@@ -500,6 +503,62 @@ def cmd_ml(config: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def _export_dir(config: Config, dev: bool) -> Path:
+    return config.paths.data_dir / ("export-dev" if dev else "export")
+
+
+def cmd_export(config: Config, args: argparse.Namespace) -> int:
+    try:
+        assets = ProtectedAssets.load(config.paths.protected_assets)
+    except ProtectedListError as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 1
+    day = args.day or yesterday(datetime.now(UTC).date())
+    conn = open_database(_db_path(config, args))
+    audit = AuditLog(conn)
+    # Align the database with the current list first, so a device protected since
+    # yesterday is deleted before anything about it could be exported.
+    scrub_protected(conn, assets, audit=audit, actor="system:export")
+    result = export_day(
+        conn,
+        Guard(assets, audit=audit, actor="system:export"),
+        _export_dir(config, args.dev),
+        day,
+        generated_at=utc_now(),
+        synthetic=args.dev,
+    )
+    conn.close()
+    rows = ", ".join(f"{t.rows} {name}" for name, t in result.tables.items())
+    print(f"Exported {day} to {result.out_dir}: {rows}.")
+    print(f"  {result.dropped_protected} row(s) dropped by the protected-asset guard.")
+    return 0
+
+
+def cmd_upload(config: Config, args: argparse.Namespace) -> int:
+    day = args.day or yesterday(datetime.now(UTC).date())
+    out_dir = _export_dir(config, args.dev)
+    prefix = "synthetic" if args.dev else "gnomehome"
+    account, sas_file = config.cloud.storage_account, config.paths.storage_sas_file
+    if not account or sas_file is None:
+        print("Upload not configured ([cloud] storage_account and storage_sas_file): nothing sent.")
+        return 0
+    plan = plan_uploads(out_dir, day, prefix)
+    if not args.send:
+        print(f"Dry run: would upload {len(plan)} file(s) to {account}/{config.cloud.container}:")
+        for _, blob in plan:
+            print(f"  {blob}")
+        print("Add --send to upload.")
+        return 0
+    try:
+        client = BlobClient(account, config.cloud.container, load_sas(sas_file))
+        sent = upload_day(client, out_dir, day, prefix)
+    except UploadError as exc:
+        print(f"Upload failed: {exc}", file=sys.stderr)
+        return 1
+    print(f"Uploaded {len(sent)} file(s) for {day} to {account}/{config.cloud.container}.")
+    return 0
+
+
 def cmd_intel(config: Config, args: argparse.Namespace) -> int:
     if not config.threat_feeds:
         print("No [[threat_intel.feeds]] configured.")
@@ -792,6 +851,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--dev", action="store_true", help="use the synthetic-data dev database"
     )
     new_domains.set_defaults(handler=cmd_new_domains)
+
+    export = sub.add_parser(
+        "export", help="write one day of data for the cloud (protected rows dropped)"
+    )
+    export.add_argument("--day", help="UTC day to export, YYYY-MM-DD (default: yesterday)")
+    export.add_argument("--dev", action="store_true", help="export the synthetic-data dev database")
+    export.set_defaults(handler=cmd_export)
+    upload = sub.add_parser(
+        "upload", help="upload an exported day to Azure storage (dry run unless --send)"
+    )
+    upload.add_argument("--day", help="UTC day to upload, YYYY-MM-DD (default: yesterday)")
+    upload.add_argument(
+        "--send", action="store_true", help="really upload (default: show the plan)"
+    )
+    upload.add_argument("--dev", action="store_true", help="upload the synthetic-data export")
+    upload.set_defaults(handler=cmd_upload)
 
     ml = sub.add_parser("ml", help="device-type guesses and unusual days (Phase 6 logic, locally)")
     ml.add_argument("--days", type=int, default=35, help="how many days of history to use")
