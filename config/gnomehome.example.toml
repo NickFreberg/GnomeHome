@@ -65,6 +65,11 @@ dhcp_days = 90
 # no alert. Raise it to 1440 to learn for a whole day first.
 learning_minutes = 60
 
+[enrichment]
+# CVE data from NVD, exploitation odds from FIRST EPSS, and the CISA KEV list.
+nvd_refresh_hours = 24      # look each software version up again daily
+feed_refresh_hours = 20     # refresh the KEV catalog about daily
+
 [api]
 # The Rust API stub. Loopback only until TLS and logins exist (Phase 8).
 # 8787 avoids Pi-hole's dashboard on 8080.
@@ -99,6 +104,9 @@ pihole_ftl_db = "../pihole/etc-pihole/pihole-FTL.db"   # Pi-hole in Docker (Appe
 scheduler = "manual"
 alert_channels = ["log", "macos"]              # "macos" shows a notification banner
 osascript_path = "/usr/bin/osascript"          # macOS's built-in tool for notifications
+# Optional: a file containing your free NVD API key (https://nvd.nist.gov/developers/request-an-api-key).
+# Keep it out of git; this path is outside the repo. Without a key, lookups are just slower.
+nvd_api_key_file = "~/.config/gnomehome/nvd_api_key"
 # router_syslog_path is not set: the router sends its syslog to the Pi.
 # On the Mac, `just synth-load` exercises the same code with synthetic syslog.
 
@@ -124,3 +132,4 @@ router_syslog_path = "/var/log/gnomehome/router.log"   # written by rsyslog (dep
 install_dir = "/opt/gnomehome"                 # where the repo is checked out on the Pi
 service_user = "gnomehome"                     # unprivileged user the jobs run as
 config_file = "/etc/gnomehome/gnomehome.toml"  # this file's location on the Pi
+nvd_api_key_file = "/etc/gnomehome/nvd_api_key"   # optional, root:gnomehome 0640

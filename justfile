@@ -54,6 +54,20 @@ scan-dry:
 syslog:
     {{gnomehome}} syslog
 
+# ------------------------------------------------------------------ risk ---
+
+# Fetch CVEs (NVD), EPSS, and CISA KEV, and match them to scanned services (--dev)
+enrich *args:
+    {{gnomehome}} enrich {{args}}
+
+# Compute today's risk score for every asset (--dev)
+score *args:
+    {{gnomehome}} score {{args}}
+
+# Show the riskiest assets and the reasons behind each score (--top N, --dev)
+risks *args:
+    {{gnomehome}} risks {{args}}
+
 # ------------------------------------------------------------- synthetic --
 
 # Generate synthetic DNS logs and router flows (fake household, reproducible)

@@ -1,0 +1,52 @@
+{
+ "resultsPerPage": 1,
+ "startIndex": 0,
+ "totalResults": 1,
+ "format": "NVD_CVE",
+ "version": "2.0",
+ "vulnerabilities": [
+  {
+   "cve": {
+    "id": "CVE-2099-0101",
+    "vulnStatus": "Analyzed",
+    "published": "2099-01-01T00:00:00.000",
+    "descriptions": [
+     {
+      "lang": "en",
+      "value": "Fake: affects OpenSSH before 7.6. Listed in the fake KEV fixture."
+     }
+    ],
+    "metrics": {
+     "cvssMetricV31": [
+      {
+       "source": "nvd@nist.gov",
+       "type": "Primary",
+       "cvssData": {
+        "version": "3.1",
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+        "baseScore": 8.1
+       }
+      }
+     ]
+    },
+    "configurations": [
+     {
+      "nodes": [
+       {
+        "operator": "OR",
+        "negate": false,
+        "cpeMatch": [
+         {
+          "vulnerable": true,
+          "criteria": "cpe:2.3:a:openbsd:openssh:*:*:*:*:*:*:*:*",
+          "versionEndExcluding": "7.6"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  }
+ ]
+}

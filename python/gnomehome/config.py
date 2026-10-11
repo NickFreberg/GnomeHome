@@ -93,6 +93,14 @@ class AlertsConfig:
 
 
 @dataclass(frozen=True)
+class EnrichmentConfig:
+    #: Look each software version up at NVD again after this long (the plan: daily).
+    nvd_refresh_hours: int = 24
+    #: Refresh the KEV catalog after this long.
+    feed_refresh_hours: int = 20
+
+
+@dataclass(frozen=True)
 class ApiConfig:
     bind: str = "127.0.0.1:8787"
 
@@ -131,6 +139,9 @@ class PlatformConfig:
     install_dir: Path | None = None
     service_user: str | None = None
     config_file: Path | None = None
+    #: A file holding the free NVD API key (never in git). Optional: without it,
+    #: lookups are slower (NVD allows 5 requests per 30 seconds).
+    nvd_api_key_file: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -143,6 +154,7 @@ class Config:
     schedules: SchedulesConfig = field(default_factory=SchedulesConfig)
     retention: RetentionConfig = field(default_factory=RetentionConfig)
     alerts: AlertsConfig = field(default_factory=AlertsConfig)
+    enrichment: EnrichmentConfig = field(default_factory=EnrichmentConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
     synthetic: SyntheticConfig = field(default_factory=SyntheticConfig)
     #: Every platform table, so the Pi's files can be rendered on the Mac.
@@ -191,6 +203,7 @@ def parse_config(data: dict[str, Any], config_path: Path) -> Config:
             "schedules",
             "retention",
             "alerts",
+            "enrichment",
             "api",
             "synthetic",
             "platforms",
@@ -222,6 +235,7 @@ def parse_config(data: dict[str, Any], config_path: Path) -> Config:
         schedules=_parse_schedules(_table(data, "schedules")),
         retention=_parse_retention(_table(data, "retention")),
         alerts=_parse_alerts(_table(data, "alerts")),
+        enrichment=_parse_enrichment(_table(data, "enrichment")),
         api=_parse_api(_table(data, "api")),
         synthetic=_parse_synthetic(_table(data, "synthetic")),
         platforms=parsed,
@@ -308,6 +322,20 @@ def _parse_alerts(table: dict[str, Any]) -> AlertsConfig:
     )
 
 
+def _parse_enrichment(table: dict[str, Any]) -> EnrichmentConfig:
+    where = "[enrichment]"
+    d = EnrichmentConfig()
+    _reject_unknown(table, set(d.__dataclass_fields__), where)
+    return EnrichmentConfig(
+        nvd_refresh_hours=_int_range(
+            table, "nvd_refresh_hours", d.nvd_refresh_hours, 1, 24 * 30, where
+        ),
+        feed_refresh_hours=_int_range(
+            table, "feed_refresh_hours", d.feed_refresh_hours, 1, 24 * 7, where
+        ),
+    )
+
+
 def _parse_api(table: dict[str, Any]) -> ApiConfig:
     where = "[api]"
     _reject_unknown(table, {"bind"}, where)
@@ -359,6 +387,7 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
             "install_dir",
             "service_user",
             "config_file",
+            "nvd_api_key_file",
         },
         where,
     )
@@ -433,6 +462,7 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
         install_dir=optional_absolute("install_dir"),
         service_user=service_user,
         config_file=optional_absolute("config_file"),
+        nvd_api_key_file=optional_path("nvd_api_key_file"),
     )
 
 

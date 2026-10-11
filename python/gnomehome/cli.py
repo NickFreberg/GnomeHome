@@ -6,7 +6,9 @@ The justfile wraps these commands so they are the same on the Mac and the Pi.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import os
 import shlex
 import shutil
 import socket
@@ -34,8 +36,11 @@ from gnomehome.db import open_database, transaction
 from gnomehome.db.migrate import MigrationError, current_version
 from gnomehome.db.scrub import scrub_protected
 from gnomehome.deploy_units import RenderError, render_pi_files, write_files
+from gnomehome.enrich import run_enrichment
+from gnomehome.feeds import UrllibClient
 from gnomehome.incidents import list_incidents, resolve_incident
 from gnomehome.protected import Guard, ProtectedAssets, ProtectedListError
+from gnomehome.risk import run_scoring
 from gnomehome.synthetic.generate import generate
 from gnomehome.synthetic.load import load_synthetic
 
@@ -322,6 +327,86 @@ def cmd_discover(config: Config, args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# vulnerabilities and risk
+# --------------------------------------------------------------------------
+
+
+def _nvd_api_key(config: Config) -> str | None:
+    env = os.environ.get("GNOMEHOME_NVD_API_KEY")
+    if env:
+        return env.strip()
+    path = config.paths.nvd_api_key_file
+    if path is not None and path.exists():
+        return path.read_text().strip() or None
+    return None
+
+
+def cmd_enrich(config: Config, args: argparse.Namespace) -> int:
+    conn = open_database(_db_path(config, args))
+    key = _nvd_api_key(config)
+    if key is None:
+        print("No NVD API key found: lookups pause 6.5 s each to respect NVD's limit.")
+    result = run_enrichment(
+        conn,
+        UrllibClient(),
+        api_key=key,
+        nvd_refresh_hours=config.enrichment.nvd_refresh_hours,
+        feed_refresh_hours=config.enrichment.feed_refresh_hours,
+    )
+    conn.close()
+    kev = result.kev_entries or "unchanged"
+    print(
+        f"Enrichment: {result.services_mapped} service(s) with a versioned CPE, "
+        f"{result.cpes_looked_up} looked up at NVD ({result.cpes_fresh} still fresh), "
+        f"{result.vulnerabilities} vulnerability match(es), KEV entries {kev}, "
+        f"EPSS for {result.epss_updated} CVE(s)."
+    )
+    for error in result.errors:
+        print(f"  problem: {error}", file=sys.stderr)
+    return 1 if result.errors else 0
+
+
+def cmd_score(config: Config, args: argparse.Namespace) -> int:
+    conn = open_database(_db_path(config, args))
+    scores = run_scoring(conn)
+    conn.close()
+    levels = ("critical", "high", "medium", "low")
+    counts = ", ".join(f"{sum(s.level == lvl for s in scores)} {lvl}" for lvl in levels)
+    print(f"Scored {len(scores)} asset(s): {counts}.")
+    return 0
+
+
+def cmd_risks(config: Config, args: argparse.Namespace) -> int:
+    path = _db_path(config, args)
+    if not path.exists():
+        print(f"{path}: not created yet (run `just migrate`)")
+        return 1
+    conn = open_database(path)
+    rows = conn.execute(
+        """
+        SELECT r.*, a.mac, a.last_ip, a.vendor, a.hostname
+          FROM risk_score r JOIN asset a ON a.id = r.asset_id
+         WHERE r.score_date = (SELECT MAX(score_date) FROM risk_score) AND a.protected = 0
+         ORDER BY r.score DESC LIMIT ?
+        """,
+        (args.top,),
+    ).fetchall()
+    conn.close()
+    if not rows:
+        print("No risk scores yet. Run `just enrich` and `just score`.")
+        return 0
+    for row in rows:
+        details = json.loads(row["factors"])
+        name = row["hostname"] or row["vendor"] or "unknown device"
+        # Risk is always a word plus the number, never color alone (design system).
+        level = row["level"].upper()
+        print(f"{level:<8} {row['score']:>5.1f}  {name}  {row['last_ip'] or '-'}  {row['mac']}")
+        for factor in details["factors"][:4]:
+            print(f"           +{factor['points']:>5.1f}  {factor['title']}: {factor['why']}")
+    return 0
+
+
+# --------------------------------------------------------------------------
 # router syslog
 # --------------------------------------------------------------------------
 
@@ -511,6 +596,18 @@ def build_parser() -> argparse.ArgumentParser:
     render = sub.add_parser("render-units", help="render the Pi's systemd/rsyslog/logrotate files")
     render.add_argument("--out", help="output folder (default: <data_dir>/deploy/pi)")
     render.set_defaults(handler=cmd_render_units)
+
+    for name, handler, text in (
+        ("enrich", cmd_enrich, "fetch CVEs (NVD), EPSS, and KEV, and match them to services"),
+        ("score", cmd_score, "compute today's risk score for every asset"),
+    ):
+        cmd = sub.add_parser(name, help=text)
+        cmd.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
+        cmd.set_defaults(handler=handler)
+    risks = sub.add_parser("risks", help="show the riskiest assets and why")
+    risks.add_argument("--top", type=int, default=10)
+    risks.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
+    risks.set_defaults(handler=cmd_risks)
 
     syslog = sub.add_parser("syslog", help="read new router syslog lines (DHCP, firewall, ...)")
     syslog.set_defaults(handler=cmd_syslog)

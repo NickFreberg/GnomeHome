@@ -1,0 +1,27 @@
+{
+ "title": "CISA Catalog of Known Exploited Vulnerabilities",
+ "catalogVersion": "2099.01.01",
+ "count": 2,
+ "vulnerabilities": [
+  {
+   "cveID": "CVE-2099-0101",
+   "vendorProject": "OpenBSD",
+   "product": "OpenSSH",
+   "vulnerabilityName": "Fake OpenSSH Vulnerability",
+   "dateAdded": "2099-01-02",
+   "dueDate": "2099-01-23",
+   "knownRansomwareCampaignUse": "Known",
+   "shortDescription": "Fake entry for tests."
+  },
+  {
+   "cveID": "CVE-2015-5477",
+   "vendorProject": "ISC",
+   "product": "BIND",
+   "vulnerabilityName": "ISC BIND Data Processing Errors Vulnerability",
+   "dateAdded": "2026-10-08",
+   "dueDate": "2026-10-11",
+   "knownRansomwareCampaignUse": "Unknown",
+   "shortDescription": "Real entry, trimmed."
+  }
+ ]
+}

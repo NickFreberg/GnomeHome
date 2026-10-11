@@ -45,7 +45,7 @@ def test_protected_filter_prints_tcpdump_expression(config_path, capsys):
 
 def test_migrate_then_db_status(config_path, capsys):
     assert cli.main(["--config", str(config_path), "migrate"]) == 0
-    assert "schema version 2" in capsys.readouterr().out
+    assert "schema version 3" in capsys.readouterr().out
     assert cli.main(["--config", str(config_path), "db-status"]) == 0
     out = capsys.readouterr().out
     assert "journal mode     wal" in out
