@@ -6,9 +6,9 @@ SOC (inventory, risk scoring, detection, and response) on a $35 computer.
 
 The full project plan, which is the source of truth, is in [`docs/PLAN.md`](docs/PLAN.md).
 
-> **Status:** Phases 1 to 6: inventory, alerts, and vulnerability risk scoring (the minimum complete
-> project), DNS and connection behavior monitoring, a plain-English incident log, and the cloud and ML
-> layer (written and tested locally, not deployed). Developed on an M1 MacBook before the Pi
+> **Status:** Phases 1 to 7: inventory, alerts, and vulnerability risk scoring (the minimum complete
+> project), DNS and connection behavior monitoring, a plain-English incident log, the cloud and ML layer
+> (written and tested locally, not deployed), and the automated Blue Team (in dry run until you turn it on). Developed on an M1 MacBook before the Pi
 > arrives. The Pi's system files are written but not yet run on hardware.
 
 ## What's here so far
@@ -43,6 +43,11 @@ The full project plan, which is the source of truth, is in [`docs/PLAN.md`](docs
   protected list, a write-only upload to Azure storage, Bicep for the Azure side with a $25 budget alert
   ([`infra/`](infra/README.md)), and a Databricks pipeline ([`databricks/`](databricks/README.md)) that runs
   anomaly detection and a device-type classifier. The ML logic is plain Python, so `just ml` runs it locally.
+- **Automated Blue Team (Phase 7)**: a Rust playbook engine runs YAML playbooks mapped to MITRE ATT&CK
+  ([`playbooks/`](playbooks/)): block a known-bad domain in Pi-hole (automatic), quarantine a device at the
+  router (only after you approve), and a weekly self-assessment. It checks the protected list before acting
+  and again right before an approved action, stays in dry run until you allow each action, and pushes fixed
+  messages (never device names) to the Azure mobile app.
 - **Router connection data**: the router's connection table, read over SSH with a pinned host key and one
   fixed read-only command, becomes per-connection flow events.
 - **Pi deployment files**: systemd timers and services, rsyslog, logrotate, and tmpfiles, rendered from the config
@@ -85,7 +90,7 @@ as untracked. It holds no secrets, so commit it if you want it versioned, or lea
 
 ```
 just setup             # installs Python deps into .venv, creates your config files from the examples
-just test              # every test should pass (about 420 Python tests plus Rust)
+just test              # every test should pass (about 435 Python tests plus Rust)
 ```
 
 Then edit two files, which git ignores:
@@ -126,6 +131,13 @@ It captures packets during a scan and proves nothing reaches the work laptop.
 | `just analyze` | DNS analytics: beaconing, DGA bursts, threat-intel hits, DNS bypass (`--dev`) |
 | `just new-domains` | Domains each device looked up for the first time (`--hours`, `--dev`) |
 | `just flows` | Read the router's connection table over SSH (on the Pi, once router SSH is set up) |
+| `just playbook` | Run the playbook engine once (`--dev`); dry run unless `[response]` allows more |
+| `just approvals` | Responses waiting for your approval |
+| `just approve <run>` / `just deny <run>` | Approve (it acts right away) or deny a waiting response |
+| `just playbooks-check` | Validate the playbook files |
+| `just self-assess` | The weekly self-assessment: new devices, newly exposed ports, new CVEs |
+| `just quarantine` | Block or release a device at the router by hand (dry run unless `--live` and allowed) |
+| `just notify` | Deliver queued notifications (fixed messages) |
 | `just ml` | Device-type guesses and unusual days, computed locally (`--dev`, `--leave-one-out`) |
 | `just summary` | The weekly summary the AI check-in reads, as JSON (`--week-end`, `--dev`) |
 | `just export` | Write yesterday's data for the cloud, protected rows dropped (`--day`, `--dev`) |
@@ -165,7 +177,9 @@ drops any line that mentions it, and opens a label-only "drift" incident if the 
 unlisted IP, or an unknown MAC takes its reserved IP. The DNS tailer drops the laptop's queries, reverse
 lookups of its address, and names that embed its address or MAC. The router flow pull drops any connection
 with the laptop at either end, including through a port forward. The nightly export re-checks every value of
-every row before anything leaves the Pi, and the protected list itself never leaves the Pi.
+every row before anything leaves the Pi, and the protected list itself never leaves the Pi. The playbook
+engine refuses a protected target before asking for approval and again right before acting, the Python
+quarantine helper checks once more, and the schema refuses any run or quarantine aimed at one.
 
 The audit log names protected devices by label only, never by MAC or IP. A test scans every committed file
 for real-looking IPs and MACs.
@@ -176,7 +190,8 @@ for real-looking IPs and MACs.
 | --- | --- |
 | `python/gnomehome/` | Python jobs: config, guard, database, audit log, nmap job, synthetic data |
 | `python/tests/` | Python tests (`just test-py`) |
-| `crates/` | Rust workspace: `gnomehome-core` (guard, audit, DB), `gnomehome-dnstail`, `gnomehome-api` (Axum), `gnomehome-playbook` |
+| `crates/` | Rust workspace: `gnomehome-core` (guard, audit, DB), `gnomehome-dnstail`, `gnomehome-playbook` (the engine), `gnomehome-api` (Axum) |
+| `playbooks/` | The YAML playbooks, each mapped to MITRE ATT&CK |
 | `config/` | `*.example.*` files with fake values; your real copies are gitignored |
 | `testdata/` | Contract vectors shared by Python and Rust (guard cases, audit hashes) |
 | `deploy/pi/` | Linux-only pieces for the Pi (systemd, capabilities, LUKS, firewall) |

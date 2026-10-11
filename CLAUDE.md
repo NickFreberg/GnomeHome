@@ -93,6 +93,11 @@ a portfolio piece, so code, docs, and commits should read well to a reviewer.
   weekly document for the AI check-in). `infra/` is Bicep (`just infra-check`). Nothing in `infra/` or
   `databricks/` is ever deployed by tooling here: the owner runs those commands. The protected list never
   leaves the Pi.
+- Response (Phase 7): `crates/gnomehome-playbook` (`playbook.rs` strict YAML loader, `engine.rs` stages,
+  approvals, releases, `effects.rs` Pi-hole API on loopback and the Python helper), `playbooks/*.yaml`,
+  `responders/router_quarantine.py` (fixed iptables rule over the pinned SSH; exit 3 = refused),
+  `assessment.py` (weekly), `notify_relay.py` (outbox kinds to fixed messages). Every action stays dry unless
+  `[response] mode = "live"` and the action is in `live_actions`; keep it that way in tests and demos.
 - Rust: `crates/gnomehome-core` (guard, audit, DB settings, config subset, timestamps; tests apply the real
   migrations via the `testkit` feature), `crates/gnomehome-dnstail` (Pi-hole log tailer: `parse.rs`,
   `pair.rs`, `lib.rs`). Rust reads `MIN_SCHEMA_VERSION` only; Python still owns migrations.
