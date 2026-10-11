@@ -16,6 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from gnomehome import __version__
+from gnomehome.alerts import notifier_from_config
 from gnomehome.audit import AuditLog
 from gnomehome.audit import verify as verify_audit
 from gnomehome.collectors.nmap_discovery import (
@@ -26,12 +27,14 @@ from gnomehome.collectors.nmap_discovery import (
     ScanResult,
     run_scan,
 )
+from gnomehome.collectors.router_syslog import ACTOR as SYSLOG_ACTOR
+from gnomehome.collectors.router_syslog import describe, ingest_router_syslog, send_alerts
 from gnomehome.config import Config, ConfigError, load_config, platform_mismatch
 from gnomehome.db import open_database, transaction
 from gnomehome.db.migrate import MigrationError, current_version
 from gnomehome.db.scrub import scrub_protected
 from gnomehome.incidents import list_incidents, resolve_incident
-from gnomehome.protected import ProtectedAssets, ProtectedListError, load_guard
+from gnomehome.protected import Guard, ProtectedAssets, ProtectedListError, load_guard
 from gnomehome.synthetic.generate import generate
 from gnomehome.synthetic.load import load_synthetic
 
@@ -318,6 +321,43 @@ def cmd_discover(config: Config, args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# router syslog
+# --------------------------------------------------------------------------
+
+
+def cmd_syslog(config: Config, _args: argparse.Namespace) -> int:
+    path = config.paths.router_syslog_path
+    if path is None:
+        print(
+            f"router_syslog_path is not set for platform {config.platform!r}. The router sends "
+            "its syslog to the Pi; on the Mac, `just synth-load` runs the same code on "
+            "synthetic router syslog.",
+            file=sys.stderr,
+        )
+        return 1
+    if not path.exists():
+        print(f"{path} does not exist yet. Is rsyslog set up? See deploy/pi/README.md.",
+              file=sys.stderr)  # fmt: skip
+        return 1
+    try:
+        assets = ProtectedAssets.load(config.paths.protected_assets)
+    except ProtectedListError as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 1
+    conn = open_database(config.paths.db_path)
+    audit = AuditLog(conn)
+    scrub_protected(conn, assets, audit=audit, actor=SYSLOG_ACTOR)
+    guard = Guard(assets, audit=audit, actor=SYSLOG_ACTOR)
+    result = ingest_router_syslog(
+        conn, guard, path, learning_minutes=config.alerts.learning_minutes
+    )
+    conn.close()
+    send_alerts(result, notifier_from_config(config))
+    describe(result, print)
+    return 0
+
+
+# --------------------------------------------------------------------------
 # synthetic data
 # --------------------------------------------------------------------------
 
@@ -432,6 +472,9 @@ def build_parser() -> argparse.ArgumentParser:
             "--dry-run", action="store_true", help="print the nmap commands; send nothing"
         )
         cmd.set_defaults(handler=handler)
+
+    syslog = sub.add_parser("syslog", help="read new router syslog lines (DHCP, firewall, ...)")
+    syslog.set_defaults(handler=cmd_syslog)
 
     synth = sub.add_parser("synth", help="generate synthetic DNS logs and flows")
     synth_load = sub.add_parser("synth-load", help="load synthetic data into the dev database")

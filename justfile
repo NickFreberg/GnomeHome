@@ -50,6 +50,10 @@ discover:
 scan-dry:
     {{gnomehome}} scan --dry-run
 
+# Read new router syslog lines: DHCP into the inventory, new-device and drift alerts (Pi)
+syslog:
+    {{gnomehome}} syslog
+
 # ------------------------------------------------------------- synthetic --
 
 # Generate synthetic DNS logs and router flows (fake household, reproducible)
