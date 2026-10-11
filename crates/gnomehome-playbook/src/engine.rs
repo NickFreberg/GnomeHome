@@ -620,37 +620,8 @@ impl<E: Effects> Engine<E> {
     }
 
     fn decide_approval(&mut self, run_id: &str, by: &str, decision: &str) -> Result<(), String> {
-        let now = self.ts();
-        let changed = self
-            .conn
-            .execute(
-                "UPDATE approval SET decision = ?1, decided_at = ?2, decided_by = ?3 \
-                 WHERE run_id = ?4 AND decision IS NULL AND expires_at > ?2",
-                params![decision, now, by, run_id],
-            )
-            .map_err(|e| e.to_string())?;
-        if changed == 0 {
-            return Err(format!(
-                "no open approval request for run {run_id} (it may have expired or been decided)"
-            ));
-        }
-        audit::append(
-            &mut self.conn,
-            by,
-            &format!(
-                "playbook.{}",
-                if decision == "approved" {
-                    "approve"
-                } else {
-                    "deny"
-                }
-            ),
-            Some(&format!("run:{run_id}")),
-            Outcome::Success,
-            None,
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
+        let now = self.now();
+        record_decision(&mut self.conn, run_id, by, decision, now)
     }
 
     fn process_approvals(&mut self, report: &mut Report) -> rusqlite::Result<()> {
@@ -1114,6 +1085,49 @@ impl<E: Effects> Engine<E> {
         )?;
         self.step(run_id, "report", None, "ok", json!({ "status": status }))
     }
+}
+
+/// Records an owner's decision on a waiting run: `approved` or `denied`, by `user:<name>`.
+/// The engine carries it out on its next pass. The dashboard calls this after checking
+/// the user is an admin with a fresh MFA code; `just approve` calls it through the engine.
+pub fn record_decision(
+    conn: &mut Connection,
+    run_id: &str,
+    by: &str,
+    decision: &str,
+    now: DateTime<Utc>,
+) -> Result<(), String> {
+    if !matches!(decision, "approved" | "denied") {
+        return Err(format!("unknown decision {decision:?}"));
+    }
+    let ts = format_ts(now);
+    let changed = conn
+        .execute(
+            "UPDATE approval SET decision = ?1, decided_at = ?2, decided_by = ?3 \
+             WHERE run_id = ?4 AND decision IS NULL AND expires_at > ?2",
+            params![decision, ts, by, run_id],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err(format!(
+            "no open approval request for run {run_id} (it may have expired or been decided)"
+        ));
+    }
+    let action = if decision == "approved" {
+        "playbook.approve"
+    } else {
+        "playbook.deny"
+    };
+    audit::append(
+        conn,
+        by,
+        action,
+        Some(&format!("run:{run_id}")),
+        Outcome::Success,
+        None,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// The trigger's conditions, checked in the decide stage.
