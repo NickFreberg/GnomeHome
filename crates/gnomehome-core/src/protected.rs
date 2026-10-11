@@ -263,10 +263,11 @@ pub fn reject_duplicate_keys(text: &str) -> Result<(), ProtectedListError> {
                     self.value_done();
                 }
                 Event::Scalar(value, ..) => {
-                    if let Some(Some((keys, true))) = self.stack.last_mut() {
-                        if !keys.insert(value.clone()) && self.duplicate.is_none() {
-                            self.duplicate = Some(value);
-                        }
+                    if let Some(Some((keys, true))) = self.stack.last_mut()
+                        && !keys.insert(value.clone())
+                        && self.duplicate.is_none()
+                    {
+                        self.duplicate = Some(value);
                     }
                     self.value_done();
                 }
@@ -347,10 +348,11 @@ impl Guard {
     /// by its label.
     pub fn find_in_text(&self, text: &str) -> Option<Match> {
         for token in runs(text, |c| c.is_ascii_digit() || c == '.') {
-            if is_ipv4_token(token) && normalize_ip(token).is_ok() {
-                if let Some(m) = self.assets.match_target(Some(token), None) {
-                    return Some(m);
-                }
+            if is_ipv4_token(token)
+                && normalize_ip(token).is_ok()
+                && let Some(m) = self.assets.match_target(Some(token), None)
+            {
+                return Some(m);
             }
         }
         for token in runs(text, |c| c.is_ascii_hexdigit() || c == ':' || c == '-') {

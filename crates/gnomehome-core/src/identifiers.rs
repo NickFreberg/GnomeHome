@@ -99,13 +99,12 @@ impl Network {
         }
         let mut addr = raw;
         // An IPv4-mapped IPv6 block (::ffff:a.b.c.d/96+) becomes the IPv4 block.
-        if let IpAddr::V6(v6) = raw {
-            if prefix >= 96 {
-                if let Some(v4) = v6.to_ipv4_mapped() {
-                    addr = IpAddr::V4(v4);
-                    prefix -= 96;
-                }
-            }
+        if let IpAddr::V6(v6) = raw
+            && prefix >= 96
+            && let Some(v4) = v6.to_ipv4_mapped()
+        {
+            addr = IpAddr::V4(v4);
+            prefix -= 96;
         }
         Ok(Network {
             addr: mask(addr, prefix),

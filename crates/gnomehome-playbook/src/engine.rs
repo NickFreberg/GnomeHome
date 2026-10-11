@@ -709,31 +709,31 @@ impl<E: Effects> Engine<E> {
                 None => None,
             };
             // The list may have changed while the request waited: check again.
-            if let Some(incident) = &incident {
-                if let Some(stop) = self.check_targets(&playbook, incident, device.as_ref()) {
-                    let (status, outcome) = match stop {
-                        Stop::Refused {
-                            label,
-                            action,
-                            matched_on,
-                        } => {
-                            self.audit_refusal(action, &label, &matched_on)?;
-                            report.refused += 1;
-                            (
-                                "refused",
-                                format!(
-                                    "Refused: the target is protected device '{label}'. Nothing was done."
-                                ),
-                            )
-                        }
-                        Stop::Skipped(why) => {
-                            report.skipped += 1;
-                            ("skipped", format!("Skipped: {why}."))
-                        }
-                    };
-                    self.finish(&run_id, incident.id, &playbook, status, &outcome, None)?;
-                    continue;
-                }
+            if let Some(incident) = &incident
+                && let Some(stop) = self.check_targets(&playbook, incident, device.as_ref())
+            {
+                let (status, outcome) = match stop {
+                    Stop::Refused {
+                        label,
+                        action,
+                        matched_on,
+                    } => {
+                        self.audit_refusal(action, &label, &matched_on)?;
+                        report.refused += 1;
+                        (
+                            "refused",
+                            format!(
+                                "Refused: the target is protected device '{label}'. Nothing was done."
+                            ),
+                        )
+                    }
+                    Stop::Skipped(why) => {
+                        report.skipped += 1;
+                        ("skipped", format!("Skipped: {why}."))
+                    }
+                };
+                self.finish(&run_id, incident.id, &playbook, status, &outcome, None)?;
+                continue;
             }
             self.act_and_report(
                 &run_id,
@@ -1144,10 +1144,25 @@ fn decide(playbook: &Playbook, incident: &Incident) -> Result<(), String> {
         }
     }
     for condition in &trigger.evidence {
-        if !holds(condition, &incident.evidence[&condition.key]) {
+        let actual = &incident.evidence[&condition.key];
+        if !holds(condition, actual) {
+            let needs = match condition.op {
+                Op::Eq => "exactly",
+                Op::Ne => "anything but",
+                Op::Gt => "more than",
+                Op::Gte => "at least",
+                Op::Lt => "less than",
+                Op::Lte => "at most",
+                Op::In => "one of",
+            };
+            let shown = if actual.is_null() {
+                "missing".to_owned()
+            } else {
+                actual.to_string()
+            };
             return Err(format!(
-                "evidence {} doesn't meet {:?} {}",
-                condition.key, condition.op, condition.value
+                "the incident's \"{}\" is {shown}, and the playbook needs {needs} {}",
+                condition.key, condition.value
             ));
         }
     }

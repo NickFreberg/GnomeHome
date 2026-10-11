@@ -305,10 +305,10 @@ pub fn login(
         burn_password_check(password);
         return Err(LoginError::Invalid);
     };
-    if let Some(until) = locked_until.as_deref().and_then(parse_ts) {
-        if until > now {
-            return Err(LoginError::Locked(format_ts(until)));
-        }
+    if let Some(until) = locked_until.as_deref().and_then(parse_ts)
+        && until > now
+    {
+        return Err(LoginError::Locked(format_ts(until)));
     }
     let password_good = verify_password(password, &hash);
     let step = if password_good {

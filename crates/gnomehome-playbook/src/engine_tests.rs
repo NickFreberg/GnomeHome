@@ -194,7 +194,12 @@ fn decide_skips_what_the_trigger_rules_out() {
         .unwrap()
         .map(Result::unwrap)
         .collect();
-    assert!(outcomes[0].contains("evidence resolved doesn't meet"));
+    assert!(
+        outcomes[0]
+            .contains("the incident's \"resolved\" is 0, and the playbook needs more than 0"),
+        "{}",
+        outcomes[0]
+    );
     assert!(outcomes[1].contains("confidence 0.50 is below"));
 }
 

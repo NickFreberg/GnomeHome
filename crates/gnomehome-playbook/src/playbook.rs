@@ -211,19 +211,19 @@ pub fn parse(text: &str) -> Result<Playbook, PlaybookError> {
             "mitre needs a technique (T1234) or a mitigation (M1234)",
         ));
     }
-    if let Some(t) = &technique {
-        if !valid_mitre(t, 'T', true) {
-            return Err(err(&format!(
-                "{t:?} is not a MITRE technique ID like T1071.004"
-            )));
-        }
+    if let Some(t) = &technique
+        && !valid_mitre(t, 'T', true)
+    {
+        return Err(err(&format!(
+            "{t:?} is not a MITRE technique ID like T1071.004"
+        )));
     }
-    if let Some(m) = &mitigation {
-        if !valid_mitre(m, 'M', false) {
-            return Err(err(&format!(
-                "{m:?} is not a MITRE mitigation ID like M1021"
-            )));
-        }
+    if let Some(m) = &mitigation
+        && !valid_mitre(m, 'M', false)
+    {
+        return Err(err(&format!(
+            "{m:?} is not a MITRE mitigation ID like M1021"
+        )));
     }
 
     let trigger = match (&doc["trigger"], tier) {

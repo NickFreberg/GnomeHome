@@ -141,12 +141,11 @@ fn split_stamp(line: &str) -> Option<(&str, &str)> {
 /// Strips `17 192.0.2.21/53122 ` and returns the ID.
 fn strip_extra_prefix(message: &str) -> (Option<u64>, &str) {
     let mut parts = message.splitn(3, ' ');
-    if let (Some(id), Some(addr), Some(rest)) = (parts.next(), parts.next(), parts.next()) {
-        if let Ok(id) = id.parse::<u64>() {
-            if addr.contains('/') {
-                return (Some(id), rest);
-            }
-        }
+    if let (Some(id), Some(addr), Some(rest)) = (parts.next(), parts.next(), parts.next())
+        && let Ok(id) = id.parse::<u64>()
+        && addr.contains('/')
+    {
+        return (Some(id), rest);
     }
     (None, message)
 }
