@@ -42,6 +42,7 @@ from gnomehome.deploy_units import RenderError, render_pi_files, write_files
 from gnomehome.enrich import run_enrichment
 from gnomehome.feeds import UrllibClient
 from gnomehome.incidents import list_incidents, resolve_incident
+from gnomehome.ml.local import run_local
 from gnomehome.protected import Guard, ProtectedAssets, ProtectedListError
 from gnomehome.report import ReportOptions, new_domain_counts
 from gnomehome.report import fetch as fetch_incidents
@@ -475,6 +476,30 @@ def cmd_analyze(config: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ml(config: Config, args: argparse.Namespace) -> int:
+    conn = open_database(_db_path(config, args))
+    result = run_local(
+        conn,
+        days=args.days,
+        leave_one_out=args.leave_one_out,
+        pihole_ip=config.network.pihole_ip,
+    )
+    conn.close()
+    if not result.classifications and not result.device_days:
+        print("No events yet: nothing to analyze.")
+        return 0
+    print("Device types (best guess, with the clues that decided it):")
+    for c in sorted(result.classifications, key=lambda c: c.device):
+        confidence = f"{c.confidence:.0%}" if c.label != "unknown" else "-"
+        print(f"  {c.device:<16} {c.label:<11} {confidence:>4}  {'; '.join(c.evidence)}")
+    print(f"\nUnusual days ({result.device_days} device-days checked):")
+    if not result.anomalies:
+        print("  None: every device stayed within its usual range.")
+    for a in result.anomalies:
+        print(f"  {a.day} {a.device:<16} {a.severity.upper():<7} {a.reason}")
+    return 0
+
+
 def cmd_intel(config: Config, args: argparse.Namespace) -> int:
     if not config.threat_feeds:
         print("No [[threat_intel.feeds]] configured.")
@@ -767,6 +792,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--dev", action="store_true", help="use the synthetic-data dev database"
     )
     new_domains.set_defaults(handler=cmd_new_domains)
+
+    ml = sub.add_parser("ml", help="device-type guesses and unusual days (Phase 6 logic, locally)")
+    ml.add_argument("--days", type=int, default=35, help="how many days of history to use")
+    ml.add_argument(
+        "--leave-one-out",
+        action="store_true",
+        help="compare each day with all the others (for a short backfill such as synthetic data)",
+    )
+    ml.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
+    ml.set_defaults(handler=cmd_ml)
 
     risks = sub.add_parser("risks", help="show the riskiest assets and why")
     risks.add_argument("--top", type=int, default=10)

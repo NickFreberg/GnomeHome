@@ -87,6 +87,10 @@ dnstail *args:
     cargo run --quiet --release --package gnomehome-dnstail -- {{args}}
 
 # Domains each device looked up for the first time (--hours N, --dev)
+# Device-type guesses and unusual days, run locally (--dev, --days, --leave-one-out)
+ml *args:
+    {{gnomehome}} ml {{args}}
+
 new-domains *args:
     {{gnomehome}} new-domains {{args}}
 
