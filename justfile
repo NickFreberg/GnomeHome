@@ -115,6 +115,10 @@ incidents *args:
     {{gnomehome}} incidents {{args}}
 
 # Mark an incident resolved, e.g. `just incident-resolve 3`
+# Write the incident log as Markdown or JSON (--since, --format json, --out -, --all, --dev)
+incident-report *args:
+    {{gnomehome}} incident-report {{args}}
+
 incident-resolve id *args:
     {{gnomehome}} incident-resolve {{id}} {{args}}
 

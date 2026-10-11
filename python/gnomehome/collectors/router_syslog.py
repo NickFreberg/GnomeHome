@@ -131,12 +131,12 @@ def _handle_dhcp(
     if by_mac is not None:
         record_protected_presence(conn, dhcp.mac, ts)
         if dhcp.kind == "DHCPACK" and dhcp.ip and by_ip is None:
-            _drift(conn, guard, by_mac.label, "protected_mac_at_unlisted_ip", result)
+            _drift(conn, guard, by_mac.label, "protected_mac_at_unlisted_ip", ts, result)
         result.dropped_protected += 1
         return
     if by_ip is not None:
         if dhcp.kind == "DHCPACK":
-            _drift(conn, guard, by_ip.label, "unknown_mac_at_protected_ip", result)
+            _drift(conn, guard, by_ip.label, "unknown_mac_at_protected_ip", ts, result)
         result.dropped_protected += 1
         return
 
@@ -195,11 +195,17 @@ def _handle_line(
 
 
 def _drift(
-    conn: sqlite3.Connection, guard: Guard, label: str, kind: str, result: IngestResult
+    conn: sqlite3.Connection, guard: Guard, label: str, kind: str, ts: str, result: IngestResult
 ) -> None:
     result.drift.append((label, kind))
     opened = drift_incident(
-        conn, label=label, kind=kind, source="router DHCP", audit=guard.audit, actor=guard.actor
+        conn,
+        label=label,
+        kind=kind,
+        source="router DHCP",
+        seen_at=ts,
+        audit=guard.audit,
+        actor=guard.actor,
     )
     if opened is not None:
         result.drift_incidents += 1

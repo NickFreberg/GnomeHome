@@ -1,15 +1,17 @@
-"""Incidents: detections written down in plain English (groundwork for FR-11).
+"""Incidents: the plain-English incident log (FR-11).
 
-Phase 2 raises two kinds:
+Every detection becomes one incident, written by a template in
+``narrative.py``: when, which device, what happened, why it matters, and what
+to do. Incidents are deduplicated by a key in their evidence, so a detection
+that keeps firing doesn't pile up while its incident is open.
+
+Two kinds come from the inventory and the guard:
 
 * ``inventory.new_device`` (FR-03): a MAC the inventory has never seen.
 * ``guard.protected_drift``: a protected device isn't where its list entry says,
   so IP-based exclusion might not cover it (plan, "Protected assets", step 8).
   These name the device by **label only**. They have no ``asset_id``, and their
   evidence holds no MAC or IP, because incidents ship to Azure later.
-
-Text is factual, per the design system's voice rules. Device-supplied names
-are quoted and labeled as such, never presented as fact.
 """
 
 from __future__ import annotations
@@ -20,7 +22,8 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
-from gnomehome.identifiers import is_locally_administered
+from gnomehome import narrative
+from gnomehome.narrative import Narrative
 from gnomehome.protected import AuditSink
 from gnomehome.timeutil import parse_ts, utc_now
 
@@ -43,19 +46,14 @@ class NewDevice:
 
 def open_incident(
     conn: sqlite3.Connection,
+    story: Narrative,
     *,
-    detection: str,
-    severity: str,
-    title: str,
-    summary: str,
     asset_id: int | None = None,
     evidence: dict[str, Any] | None = None,
     dedup_key: str | None = None,
-    mitre_technique: str | None = None,
-    confidence: float | None = None,
 ) -> int | None:
-    """Create an incident. Returns None when an open one with the same key already exists."""
-    if severity not in SEVERITIES:
+    """Record an incident. Returns None when an open one with the same key already exists."""
+    if story.severity not in SEVERITIES:
         raise ValueError(f"severity must be one of {SEVERITIES}")
     evidence = dict(evidence or {})
     if dedup_key is not None:
@@ -64,25 +62,31 @@ def open_incident(
         existing = conn.execute(
             f"SELECT id FROM incident WHERE detection = ? AND status IN ({marks}) "  # noqa: S608
             "AND json_extract(evidence, '$.dedup_key') = ?",
-            (detection, *OPEN_STATUSES, dedup_key),
+            (story.detection, *OPEN_STATUSES, dedup_key),
         ).fetchone()
         if existing:
             return None
     now = utc_now()
     cursor = conn.execute(
         "INSERT INTO incident (created_at, updated_at, asset_id, detection, severity, title, "
-        "summary, evidence, mitre_technique, confidence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "summary, evidence, mitre_technique, confidence, occurred_at, device, what_happened, "
+        "why_it_matters, next_steps) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             now,
             now,
             asset_id,
-            detection,
-            severity,
-            title,
-            summary,
+            story.detection,
+            story.severity,
+            story.title,
+            story.summary,
             json.dumps(evidence, sort_keys=True),
-            mitre_technique,
-            confidence,
+            story.mitre_technique,
+            story.confidence,
+            story.occurred_at,
+            story.device,
+            story.what_happened,
+            story.why_it_matters,
+            story.next_steps,
         ),
     )
     return int(cursor.lastrowid)
@@ -104,51 +108,21 @@ def in_learning_window(conn: sqlite3.Connection, seen_at: str, learning_minutes:
 
 
 def new_device_incident(conn: sqlite3.Connection, device: NewDevice, *, source: str) -> int | None:
-    vendor = device.vendor or "unknown vendor"
-    parts = [
-        f"A device GnomeHome has not seen before joined the network (first seen "
-        f"{device.seen_at}, via {source}). IP {device.ip or 'unknown'}, MAC {device.mac}, "
-        f"vendor {device.vendor or 'unknown'}."
-    ]
-    if device.hostname:
-        parts.append(
-            f'It calls itself "{device.hostname}" (a device-supplied name, which can be false).'
-        )
-    if is_locally_administered(device.mac):
-        parts.append(
-            "Its MAC is randomized (a phone's private Wi-Fi address), so it may be a known device "
-            "using a new address."
-        )
-    parts.append(
-        "Why it matters: every device on the network should be one you recognize. If you don't "
-        "recognize it, find it in the ASUS app's device list."
+    story = narrative.new_device(
+        ip=device.ip,
+        mac=device.mac,
+        vendor=device.vendor,
+        hostname=device.hostname,
+        seen_at=device.seen_at,
+        source=source,
     )
     return open_incident(
         conn,
-        detection=NEW_DEVICE,
-        severity="low",
-        title=f"New device on the network ({vendor})",
-        summary=" ".join(parts),
+        story,
         asset_id=device.asset_id,
         evidence={"source": source, "mac": device.mac, "ip": device.ip},
         dedup_key=f"new_device:{device.mac}",
     )
-
-
-_DRIFT_TEXT = {
-    "protected_mac_at_unlisted_ip": (
-        "Protected device {label!r} was given an IP address that is not on its protected list. "
-        "Scans exclude protected devices by IP, so if it keeps that address, a scan could reach "
-        "it. Fix the DHCP reservation for {label!r} in the router, then rerun the zero-packet "
-        "test (docs/runbooks/zero-packet-test.md)."
-    ),
-    "unknown_mac_at_protected_ip": (
-        "The reserved IP address of protected device {label!r} was given to a MAC address that is "
-        "not on the list. Either the laptop's MAC changed (for example, a randomized Wi-Fi "
-        "address) or another device took its address. Nothing about that device was stored. If "
-        "it is the laptop, add the new MAC to config/protected_assets.yaml."
-    ),
-}
 
 
 def drift_incident(
@@ -157,16 +131,17 @@ def drift_incident(
     label: str,
     kind: str,
     source: str,
+    seen_at: str | None = None,
     audit: AuditSink | None = None,
     actor: str = "system",
 ) -> int | None:
     """Open (or skip, if already open) a drift incident. Label only: no MAC, no IP."""
+    story = narrative.protected_drift(
+        label=label, kind=kind, source=source, seen_at=seen_at or utc_now()
+    )
     incident_id = open_incident(
         conn,
-        detection=PROTECTED_DRIFT,
-        severity="medium",
-        title=f"Protected device {label!r} is not where its list entry says",
-        summary=_DRIFT_TEXT[kind].format(label=label),
+        story,
         evidence={"label": label, "kind": kind, "source": source},
         dedup_key=f"drift:{label}:{kind}",
     )

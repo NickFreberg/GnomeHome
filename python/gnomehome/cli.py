@@ -43,6 +43,10 @@ from gnomehome.enrich import run_enrichment
 from gnomehome.feeds import UrllibClient
 from gnomehome.incidents import list_incidents, resolve_incident
 from gnomehome.protected import Guard, ProtectedAssets, ProtectedListError
+from gnomehome.report import ReportOptions, new_domain_counts
+from gnomehome.report import fetch as fetch_incidents
+from gnomehome.report import to_json as report_json
+from gnomehome.report import to_markdown as report_markdown
 from gnomehome.risk import run_scoring
 from gnomehome.synthetic.generate import generate
 from gnomehome.synthetic.load import load_synthetic
@@ -220,9 +224,47 @@ def cmd_incidents(config: Config, args: argparse.Namespace) -> int:
         return 0
     for row in rows:
         # Severity is always a word, never color alone (design system).
-        print(f"#{row['id']}  {row['severity'].upper():<8} {row['status']:<12} {row['created_at']}")
+        when = row["occurred_at"] or row["created_at"]
+        print(f"#{row['id']}  {row['severity'].upper():<8} {row['status']:<12} {when}")
         print(f"    {row['title']}")
-        print(f"    {row['summary']}")
+        if row["what_happened"]:
+            print(f"    What happened: {row['what_happened']}")
+            print(f"    Why it matters: {row['why_it_matters']}")
+            print(f"    What to do: {row['next_steps']}")
+        else:
+            print(f"    {row['summary']}")
+    return 0
+
+
+def cmd_incident_report(config: Config, args: argparse.Namespace) -> int:
+    path = _db_path(config, args)
+    if not path.exists():
+        print(f"{path}: not created yet (run `just migrate`)")
+        return 1
+    conn = open_database(path)
+    options = ReportOptions(since=args.since, include_closed=args.all, generated_at=utc_now())
+    incidents = fetch_incidents(conn, options)
+    if args.format == "json":
+        text = report_json(incidents, options)
+    else:
+        text = report_markdown(incidents, options, new_domain_counts(conn, args.since))
+    conn.close()
+    if args.out == "-":
+        print(text, end="")
+        return 0
+    out = (
+        Path(args.out)
+        if args.out
+        else (
+            config.paths.data_dir
+            / "reports"
+            / f"incidents-{options.generated_at[:10]}.{args.format}"
+        )
+    )
+    out.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    out.write_text(text)
+    out.chmod(0o600)
+    print(f"Wrote {len(incidents)} incident(s) to {out}")
     return 0
 
 
@@ -675,6 +717,15 @@ def build_parser() -> argparse.ArgumentParser:
     incidents.add_argument("--all", action="store_true", help="include resolved incidents")
     incidents.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
     incidents.set_defaults(handler=cmd_incidents)
+    report = sub.add_parser("incident-report", help="write the incident log as Markdown or JSON")
+    report.add_argument(
+        "--since", help="only incidents from this UTC time on (2026-10-11T00:00:00.000Z)"
+    )
+    report.add_argument("--format", choices=("md", "json"), default="md")
+    report.add_argument("--out", help="output file, or - for the screen (default: data/reports/)")
+    report.add_argument("--all", action="store_true", help="include resolved incidents")
+    report.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
+    report.set_defaults(handler=cmd_incident_report)
     resolve = sub.add_parser("incident-resolve", help="mark an incident resolved")
     resolve.add_argument("id", type=int)
     resolve.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")

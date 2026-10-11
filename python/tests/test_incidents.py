@@ -16,9 +16,11 @@ from gnomehome.incidents import (
     open_incident,
     resolve_incident,
 )
+from gnomehome.narrative import Narrative
 
 T0 = "2026-10-11T08:00:00.000Z"
 T_LATER = "2026-10-11T12:00:00.000Z"
+STORY = Narrative("test", "low", "t", T0, "the device at 192.0.2.5", "w", "y", "n")
 
 
 @pytest.fixture
@@ -72,15 +74,13 @@ def test_drift_incident_names_the_label_only(db):
 
 def test_resolve_reopens_dedup_and_is_audited(db):
     audit = AuditLog(db)
-    incident_id = open_incident(db, detection="test", severity="low", title="t", summary="s",
-                                dedup_key="k")  # fmt: skip
+    incident_id = open_incident(db, STORY, dedup_key="k")
     assert resolve_incident(db, incident_id, audit=audit, actor="user:local")
     assert not resolve_incident(db, incident_id, audit=audit, actor="user:local")
     assert list_incidents(db) == []
     assert len(list_incidents(db, include_closed=True)) == 1
     # Once resolved, the same condition can raise a fresh incident.
-    assert open_incident(db, detection="test", severity="low", title="t", summary="s",
-                         dedup_key="k") is not None  # fmt: skip
+    assert open_incident(db, STORY, dedup_key="k") is not None
 
 
 def test_protected_presence_is_existence_only_and_never_updated(db):

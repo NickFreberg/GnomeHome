@@ -25,7 +25,9 @@ import sqlite3
 from dataclasses import asdict, dataclass
 from datetime import timedelta
 
+from gnomehome import narrative
 from gnomehome.db import transaction
+from gnomehome.incidents import open_incident
 from gnomehome.timeutil import parse_ts, utc_now
 
 MODEL_VERSION = "risk-v1"
@@ -215,8 +217,15 @@ def _open_services(conn: sqlite3.Connection, asset_id: int) -> list[sqlite3.Row]
     return [r for r in rows if latest - parse_ts(r["last_seen"]) <= OPEN_WINDOW]
 
 
+_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+
 def run_scoring(conn: sqlite3.Connection, *, score_date: str | None = None) -> list[AssetScore]:
-    """Score every non-protected asset for ``score_date`` (default: today, UTC)."""
+    """Score every non-protected asset for ``score_date`` (default: today, UTC).
+
+    A device whose level rises to high or critical (or starts there) gets a
+    ``risk.increase`` incident.
+    """
     now = utc_now()
     day = score_date or now[:10]
     scores = []
@@ -225,6 +234,16 @@ def run_scoring(conn: sqlite3.Connection, *, score_date: str | None = None) -> l
         for asset in assets:
             result = score_asset(conn, asset)
             scores.append(result)
+            previous = conn.execute(
+                "SELECT level FROM risk_score WHERE asset_id = ? AND score_date < ? "
+                "ORDER BY score_date DESC LIMIT 1",
+                (asset["id"], day),
+            ).fetchone()
+            old_level = previous[0] if previous else None
+            if _RANK[result.level] >= _RANK["high"] and (
+                old_level is None or _RANK[result.level] > _RANK[old_level]
+            ):
+                _risk_incident(conn, asset, result, old_level, now)
             factors = {
                 "model": MODEL_VERSION,
                 "summary": result.summary,
@@ -250,3 +269,28 @@ def run_scoring(conn: sqlite3.Connection, *, score_date: str | None = None) -> l
                 ),
             )
     return scores
+
+
+def _risk_incident(
+    conn: sqlite3.Connection,
+    asset: sqlite3.Row,
+    result: AssetScore,
+    old_level: str | None,
+    now: str,
+) -> None:
+    top = sorted(result.factors, key=lambda f: f.points, reverse=True)
+    story = narrative.risk_increase(
+        device=narrative.describe_device(asset["last_ip"], asset["vendor"], asset["hostname"]),
+        old_level=old_level,
+        new_level=result.level,
+        score=result.score,
+        reasons=[f.title for f in top if f.points > 0],
+        scored_at=now,
+    )
+    open_incident(
+        conn,
+        story,
+        asset_id=asset["id"],
+        evidence={"score": result.score, "level": result.level, "previous_level": old_level},
+        dedup_key=f"risk:{asset['id']}:{result.level}",
+    )

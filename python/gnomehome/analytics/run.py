@@ -12,6 +12,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import timedelta
 
+from gnomehome import narrative
 from gnomehome.analytics.detect import (
     Finding,
     Settings,
@@ -25,6 +26,7 @@ from gnomehome.analytics.detect import (
 from gnomehome.config import Config
 from gnomehome.db import transaction
 from gnomehome.incidents import open_incident
+from gnomehome.narrative import Narrative, describe_device
 from gnomehome.timeutil import format_ts, parse_ts
 
 
@@ -86,111 +88,47 @@ def run_analysis(conn: sqlite3.Connection, settings: Settings) -> AnalysisResult
     return result
 
 
-def _device_name(conn: sqlite3.Connection, finding: Finding) -> str:
+def _device(conn: sqlite3.Connection, finding: Finding) -> str:
     row = None
     if finding.asset_id is not None:
         row = conn.execute(
             "SELECT hostname, vendor FROM asset WHERE id = ?", (finding.asset_id,)
         ).fetchone()
-    label = (row["hostname"] or row["vendor"]) if row else None
-    return f"the device at {finding.src_ip}" + (f' ("{label}")' if label else "")
+    if row is None:
+        return describe_device(finding.src_ip)
+    return describe_device(finding.src_ip, row["vendor"], row["hostname"])
 
 
-def _every(seconds: float) -> str:
-    if seconds < 120:
-        return f"{seconds:.0f} seconds"
-    if seconds < 7200:
-        return f"{seconds / 60:.0f} minutes"
-    return f"{seconds / 3600:.1f} hours"
+def _story(conn: sqlite3.Connection, f: Finding) -> tuple[Narrative, str]:
+    """The incident text and its dedup key."""
+    device = _device(conn, f)
+    d = f.details
+    span = {"first_ts": f.first_ts, "last_ts": f.last_ts}
+    if f.detection == "dns.beaconing":
+        story = narrative.beaconing(
+            device=device, domain=f.domain, count=f.count, details=d, **span
+        )
+        return story, f"beacon:{f.src_ip}:{f.domain}"
+    if f.detection == "dns.dga":
+        return narrative.dga(device=device, details=d, **span), f"dga:{f.src_ip}:{f.first_ts[:13]}"
+    if f.detection == "dns.threat_intel":
+        story = narrative.threat_intel(
+            device=device, domain=f.domain, count=f.count, details=d, **span
+        )
+        return story, f"intel:{f.src_ip}:{d['indicator']}"
+    if f.detection == "dns.bypass":
+        return narrative.dns_bypass(device=device, count=f.count, details=d, **span), (
+            f"bypass:{f.src_ip}"
+        )
+    raise ValueError(f"unknown detection {f.detection}")
 
 
 def _open(conn: sqlite3.Connection, f: Finding) -> int | None:
-    device = _device_name(conn, f)
-    d = f.details
-    if f.detection == "dns.beaconing":
-        return open_incident(
-            conn,
-            detection=f.detection,
-            severity="medium",
-            title=f'Regular check-ins to "{f.domain}"',
-            summary=(
-                f'What happened: {device} looked up "{f.domain}" {f.count} times between '
-                f"{f.first_ts} and {f.last_ts}, about every {_every(d['period_seconds'])}, "
-                f"varying by only {d['jitter']:.0%}. It first contacted this domain at "
-                f"{d['first_seen']}, after the baseline period. Why it matters: malware often "
-                "checks in with its command server on a steady timer (MITRE ATT&CK T1071.004). "
-                "Some legitimate apps do too, so check whether you recognize the domain."
-            ),
-            asset_id=f.asset_id,
-            evidence={"src_ip": f.src_ip, "domain": f.domain, **d},
-            dedup_key=f"beacon:{f.src_ip}:{f.domain}",
-            mitre_technique="T1071.004",
-            confidence=round(max(0.5, 1 - d["jitter"] / 0.15 * 0.5), 2),
-        )
-    if f.detection == "dns.dga":
-        examples = ", ".join(f'"{x}"' for x in d["examples"][:3])
-        return open_incident(
-            conn,
-            detection=f.detection,
-            severity="high",
-            title="Burst of machine-generated domain lookups",
-            summary=(
-                f"What happened: between {f.first_ts} and {f.last_ts}, {device} looked up "
-                f"{d['distinct_names']} random-looking domains (for example {examples}), and "
-                f"{d['nxdomain_share']:.0%} of them don't exist. Why it matters: malware that "
-                "generates domain names tries many quickly to find its command server (MITRE "
-                "ATT&CK T1568.002). Check the device for unwanted software."
-            ),
-            asset_id=f.asset_id,
-            evidence={"src_ip": f.src_ip, **d},
-            dedup_key=f"dga:{f.src_ip}:{f.first_ts[:13]}",
-            mitre_technique="T1568.002",
-            confidence=round(min(1.0, d["mean_score"] + 0.2), 2),
-        )
-    if f.detection == "dns.threat_intel":
-        resolved, blocked = d["resolved"], d["blocked"]
-        outcome = (
-            f"Pi-hole blocked all {blocked} lookup(s)."
-            if resolved == 0
-            else f"{resolved} lookup(s) were answered, so the device could reach it."
-        )
-        return open_incident(
-            conn,
-            detection=f.detection,
-            severity="medium" if resolved == 0 else "high",
-            title=f'Lookup of a known-bad domain: "{d["indicator"]}"',
-            summary=(
-                f'What happened: {device} looked up "{f.domain}", which is on the '
-                f"{', '.join(d['sources'])} threat list, {f.count} time(s) between {f.first_ts} "
-                f"and {f.last_ts}. {outcome} Why it matters: these lists track domains used for "
-                "malware, phishing, and scams."
-            ),
-            asset_id=f.asset_id,
-            evidence={"src_ip": f.src_ip, "domain": f.domain, **d},
-            dedup_key=f"intel:{f.src_ip}:{d['indicator']}",
-            confidence=0.9,
-        )
-    if f.detection == "dns.bypass":
-        methods = " and ".join(sorted(d["methods"]))
-        resolvers = ", ".join(d["resolvers"])
-        return open_incident(
-            conn,
-            detection=f.detection,
-            severity="low",
-            title="Device skips Pi-hole for DNS",
-            summary=(
-                f"What happened: between {f.first_ts} and {f.last_ts}, {device} sent "
-                f"{f.count} DNS connection(s) ({methods}) straight to {resolvers} instead of "
-                "Pi-hole. Why it matters: GnomeHome can't see, filter, or check this device's "
-                "lookups against threat lists (risk R-07). Many streaming devices do this on "
-                "purpose. If you want it filtered, block outbound DNS for it on the router."
-            ),
-            asset_id=f.asset_id,
-            evidence={"src_ip": f.src_ip, "count": f.count, **d},
-            dedup_key=f"bypass:{f.src_ip}",
-            confidence=0.8,
-        )
-    raise ValueError(f"unknown detection {f.detection}")
+    story, dedup_key = _story(conn, f)
+    evidence = {"src_ip": f.src_ip, "count": f.count, **f.details}
+    if f.detection != "dns.dga":
+        evidence["domain"] = f.domain
+    return open_incident(conn, story, asset_id=f.asset_id, evidence=evidence, dedup_key=dedup_key)
 
 
 def _checkpoint(conn: sqlite3.Connection, detector: str) -> str | None:
