@@ -1,0 +1,50 @@
+[project]
+name = "gnomehome"
+version = "0.1.0"
+description = "Hardened home network detection and response: Python jobs (scans, enrichment, analytics)"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "defusedxml>=0.7.1",
+    "pyyaml>=6.0.2",
+]
+
+[project.scripts]
+gnomehome = "gnomehome.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.11",
+]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# Python lives in python/ so it sits cleanly next to the Rust crates/ folder.
+module-root = "python"
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "nmap: runs the real nmap binary against 127.0.0.1 only (skipped if nmap is missing)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["python"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = [
+    "S603", # subprocess without shell: we always pass argv lists, never a shell string
+    "S607", # partial executable path: tool paths come from config
+]
+
+[tool.ruff.lint.per-file-ignores]
+"python/tests/**" = ["S101", "S108"]
