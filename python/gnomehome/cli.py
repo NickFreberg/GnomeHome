@@ -22,6 +22,7 @@ from gnomehome import __version__
 from gnomehome.alerts import FINDING_MESSAGE, notifier_from_config
 from gnomehome.analytics.intel import FeedSpec, refresh_feeds
 from gnomehome.analytics.run import run_analysis, settings_from_config
+from gnomehome.assessment import assess_week
 from gnomehome.audit import AuditLog
 from gnomehome.audit import verify as verify_audit
 from gnomehome.collectors.nmap_discovery import (
@@ -45,11 +46,12 @@ from gnomehome.export import export_day, yesterday
 from gnomehome.feeds import UrllibClient
 from gnomehome.incidents import list_incidents, resolve_incident
 from gnomehome.ml.local import run_local
-from gnomehome.protected import Guard, ProtectedAssets, ProtectedListError
+from gnomehome.protected import Guard, ProtectedAssets, ProtectedListError, ProtectedTargetError
 from gnomehome.report import ReportOptions, new_domain_counts
 from gnomehome.report import fetch as fetch_incidents
 from gnomehome.report import to_json as report_json
 from gnomehome.report import to_markdown as report_markdown
+from gnomehome.responders.router_quarantine import live_allowed, quarantine
 from gnomehome.risk import run_scoring
 from gnomehome.summary import from_sqlite as weekly_summary
 from gnomehome.synthetic.generate import generate
@@ -573,6 +575,56 @@ def cmd_summary(config: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+#: Exit code when the guard refuses a protected target (the playbook engine checks for it).
+EXIT_REFUSED = 3
+
+
+def cmd_quarantine(config: Config, args: argparse.Namespace) -> int:
+    try:
+        assets = ProtectedAssets.load(config.paths.protected_assets)
+    except ProtectedListError as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 1
+    conn = open_database(config.paths.db_path)
+    audit = AuditLog(conn)
+    guard = Guard(assets, audit=audit, actor="system:playbook")
+    live = args.live and live_allowed(config)
+    if args.live and not live:
+        print('Dry run: [response] mode isn\'t "live" with router.quarantine in live_actions.')
+    try:
+        run = fetcher_from_config(config).run if live else None
+        result = quarantine(guard, audit, args.mac, block=args.block, run=run,
+                            run_id=args.run_id, live=live)  # fmt: skip
+    except ProtectedTargetError as exc:
+        print(f"REFUSED: {exc.label!r} is a protected device. Nothing was sent.", file=sys.stderr)
+        return EXIT_REFUSED
+    except (ValueError, FlowPullError) as exc:
+        print(f"Quarantine failed: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        conn.close()
+    verb = "block" if result.block else "release"
+    if result.dry_run:
+        print(f"Dry run: would {verb} {result.mac} at the router with: {result.command}")
+    else:
+        print(f"Router: {verb}ed {result.mac}.")
+    return 0
+
+
+def cmd_self_assess(config: Config, args: argparse.Namespace) -> int:
+    week_end = date.fromisoformat(args.week_end) if args.week_end else datetime.now(UTC).date()
+    conn = open_database(_db_path(config, args))
+    result = assess_week(conn, week_end)
+    conn.close()
+    print(
+        f"Week {result.week_start} to {result.week_end}: {len(result.new_devices)} new device(s), "
+        f"{len(result.new_ports)} newly exposed port(s), {len(result.new_cves)} new CVE(s) "
+        f"({result.kev_cves} known exploited), {result.high_risk_devices} high-risk device(s)."
+    )
+    print("Incident opened." if result.incident_id else "Already assessed this week.")
+    return 0
+
+
 def cmd_intel(config: Config, args: argparse.Namespace) -> int:
     if not config.threat_feeds:
         print("No [[threat_intel.feeds]] configured.")
@@ -881,6 +933,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     upload.add_argument("--dev", action="store_true", help="upload the synthetic-data export")
     upload.set_defaults(handler=cmd_upload)
+
+    quarantine_cmd = sub.add_parser(
+        "quarantine", help="block or release a device at the router (dry run unless --live)"
+    )
+    quarantine_cmd.add_argument("--mac", required=True, help="the device's MAC address")
+    action = quarantine_cmd.add_mutually_exclusive_group(required=True)
+    action.add_argument("--block", action="store_true", dest="block")
+    action.add_argument("--release", action="store_false", dest="block")
+    quarantine_cmd.add_argument("--run-id", help="the playbook run this belongs to")
+    quarantine_cmd.add_argument(
+        "--live", action="store_true", help="really send it (also needs [response] mode = live)"
+    )
+    quarantine_cmd.set_defaults(handler=cmd_quarantine)
+
+    assess = sub.add_parser("self-assess", help="weekly self-assessment: what changed (FR-17)")
+    assess.add_argument("--week-end", help="last day of the week, YYYY-MM-DD (default: today)")
+    assess.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
+    assess.set_defaults(handler=cmd_self_assess)
 
     summary = sub.add_parser("summary", help="the weekly summary the AI check-in reads (JSON)")
     summary.add_argument("--week-end", help="last day of the week, YYYY-MM-DD (default: today)")

@@ -345,3 +345,58 @@ def risk_increase(
         ),
         confidence=1.0,
     )
+
+
+# --------------------------------------------------------------------------
+# Weekly self-assessment
+# --------------------------------------------------------------------------
+
+
+def weekly_assessment(
+    *,
+    week_start: str,
+    week_end: str,
+    new_devices: list[str],
+    new_ports: list[str],
+    new_cves: list[str],
+    kev_cves: int,
+    high_risk_devices: int,
+) -> Narrative:
+    found = len(new_devices) + len(new_ports) + len(new_cves)
+    if kev_cves or high_risk_devices:
+        severity = "high" if kev_cves else "medium"
+    else:
+        severity = "medium" if new_ports or new_cves else "low"
+
+    def listed(items: list[str], what: str) -> str:
+        if not items:
+            return f"no {what}"
+        shown = "; ".join(items[:5])
+        more = f"; and {len(items) - 5} more" if len(items) > 5 else ""
+        return f"{len(items)} {what} ({shown}{more})"
+
+    what = (
+        f"For the week {week_start} to {week_end}: {listed(new_devices, 'new device(s)')}, "
+        f"{listed(new_ports, 'newly exposed port(s)')}, and {listed(new_cves, 'new CVE(s)')}"
+        f"{f', {kev_cves} of them known to be exploited' if kev_cves else ''}. "
+        f"{high_risk_devices} device(s) are at high or critical risk."
+    )
+    return Narrative(
+        detection="assessment.weekly",
+        severity=severity,
+        title="Weekly self-assessment" + ("" if found else ": nothing new"),
+        occurred_at=f"{week_end}T23:59:59.999Z",
+        device="the whole network",
+        what_happened=what,
+        why_it_matters=(
+            "New devices, newly opened ports, and new vulnerabilities are how a home network's "
+            "attack surface grows without anyone noticing."
+        ),
+        next_steps=(
+            "Check that you recognize each new device, close ports that don't need to be open, "
+            "and update anything with a known-exploited CVE first. `just risks` shows the details."
+            if found
+            else "Nothing to do this week."
+        ),
+        confidence=1.0,
+    )

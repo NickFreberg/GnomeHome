@@ -63,7 +63,7 @@ class SshFetcher:
     timeout: float = 30
     runner: Callable[..., subprocess.CompletedProcess] = field(default=subprocess.run)
 
-    def argv(self) -> list[str]:
+    def argv(self, command: str = COMMAND) -> list[str]:
         return [
             self.ssh_path,
             "-o", "BatchMode=yes",
@@ -73,18 +73,22 @@ class SshFetcher:
             "-i", self.key_file,
             "-p", str(self.port),
             f"{self.user}@{self.host}",
-            COMMAND,
+            command,
         ]  # fmt: skip
 
-    def __call__(self) -> str:
+    def run(self, command: str) -> str:
+        """Run one fixed command on the router. Callers never build it from untrusted text."""
         try:
-            proc = self.runner(self.argv(), capture_output=True, text=True, timeout=self.timeout,
-                               check=False)  # fmt: skip
+            proc = self.runner(self.argv(command), capture_output=True, text=True,
+                               timeout=self.timeout, check=False)  # fmt: skip
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise FlowPullError(f"ssh to the router failed: {exc}") from None
         if proc.returncode != 0:
             raise FlowPullError(f"ssh exited {proc.returncode}: {proc.stderr.strip()[:200]}")
         return proc.stdout
+
+    def __call__(self) -> str:
+        return self.run(COMMAND)
 
 
 def fetcher_from_config(config: Config) -> SshFetcher:

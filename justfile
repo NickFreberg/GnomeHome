@@ -95,6 +95,14 @@ export *args:
 upload *args:
     {{gnomehome}} upload {{args}}
 
+# Weekly self-assessment: new devices, newly exposed ports, new CVEs (--week-end, --dev)
+self-assess *args:
+    {{gnomehome}} self-assess {{args}}
+
+# Block or release a device at the router: a dry run unless --live and [response] allows it
+quarantine *args:
+    {{gnomehome}} quarantine {{args}}
+
 # The weekly summary the AI check-in reads, as JSON (--week-end YYYY-MM-DD, --dev)
 summary *args:
     {{gnomehome}} summary {{args}}

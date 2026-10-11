@@ -97,6 +97,15 @@ def every_template() -> list[narrative.Narrative]:
             reasons=["CVE-2099-0001 (known exploited)", "Telnet open"],
             scored_at=T1,
         ),
+        narrative.weekly_assessment(
+            week_start="2026-10-05",
+            week_end="2026-10-11",
+            new_devices=[DEVICE],
+            new_ports=[],
+            new_cves=["CVE-2099-0001, CVSS 9.8, known exploited"],
+            kev_cves=1,
+            high_risk_devices=1,
+        ),
     ]
 
 
