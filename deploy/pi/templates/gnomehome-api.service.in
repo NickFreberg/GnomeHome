@@ -1,0 +1,25 @@
+# Rendered by `just render-units` from config/gnomehome.toml. Edit the config, not this file.
+[Unit]
+Description=GnomeHome dashboard (HTTPS, accounts with MFA, LAN only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${user}
+Group=${user}
+Environment=GNOMEHOME_CONFIG=${config_file}
+ExecStart=${install_dir}/bin/gnomehome-api serve
+Restart=on-failure
+RestartSec=10s
+# Serves the LAN only: the host firewall allows the port from the LAN, and
+# [api] bind refuses 0.0.0.0. It needs no capabilities (use a port above 1023).
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=${writable}
+ReadOnlyPaths=${readonly}
+${hardening}
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,24 @@
+[package]
+name = "gnomehome-playbook"
+description = "GnomeHome playbook engine (automated Blue Team): YAML playbooks, tiers, approvals."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+gnomehome-core = { workspace = true }
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+ureq = { workspace = true }
+yaml-rust2 = { workspace = true }
+
+[dev-dependencies]
+gnomehome-core = { workspace = true, features = ["testkit"] }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

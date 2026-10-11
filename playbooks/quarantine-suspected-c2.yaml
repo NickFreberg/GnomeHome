@@ -1,0 +1,19 @@
+# A device shows command-and-control behavior: a steady new check-in, or a burst
+# of machine-generated domains. Cut it off from the internet at the router for a
+# day, but only after the owner approves: quarantining a device is disruptive.
+name: quarantine-suspected-c2
+version: 1
+description: Quarantine a device at the router after an approved C2 finding.
+tier: ask_first
+mitre:
+  technique: T1071.004    # application-layer protocol, DNS (beaconing)
+  mitigation: M1037       # filter network traffic
+trigger:
+  detection: [dns.beaconing, dns.dga]
+  min_confidence: 0.7
+act:
+  - action: router.quarantine
+    device: incident      # the incident's device; protected devices are refused
+    hours: 24
+report:
+  notify: action_taken

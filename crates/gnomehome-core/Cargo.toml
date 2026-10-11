@@ -1,0 +1,28 @@
+[package]
+name = "gnomehome-core"
+description = "Shared GnomeHome building blocks: protected-asset guard, audit log, database, config."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+toml = { workspace = true }
+yaml-rust2 = { workspace = true }
+tempfile = { workspace = true, optional = true }
+
+[features]
+# Test helpers (a database built from the real migrations) for the other crates' tests.
+testkit = ["dep:tempfile"]
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

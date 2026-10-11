@@ -1,0 +1,12 @@
+# Rendered by `just render-units` from config/gnomehome.toml ([schedules] enrich_daily_at).
+[Unit]
+Description=Run GnomeHome enrichment and risk scoring daily at ${enrich_at}
+
+[Timer]
+OnCalendar=*-*-* ${enrich_at}:00
+Persistent=true
+# Spread requests so NVD isn't hit at the same second every day.
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

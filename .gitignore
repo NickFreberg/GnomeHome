@@ -1,0 +1,45 @@
+# ---------------------------------------------------------------------------
+# Never commit secrets or real network identifiers (MACs, IPs, hostnames).
+# The real config and protected list live only on your machines; the repo
+# holds *.example.* copies with fake values.
+# ---------------------------------------------------------------------------
+config/gnomehome.toml
+config/protected_assets.yaml
+.env
+.env.*
+*.pem
+*.key
+
+# Runtime data: SQLite databases, scan output, captures, synthetic output
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.pcap
+*.pcapng
+
+# Pi-hole's saved state from the Docker setup (Appendix A). Contains DNS logs.
+pihole/etc-pihole/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Rust
+target/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+infra/main.parameters.json
+databricks/dist/
+databricks/.databricks/
+web/dist/

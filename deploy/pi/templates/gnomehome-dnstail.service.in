@@ -1,0 +1,33 @@
+# Rendered by `just render-units` from config/gnomehome.toml. Edit the config, not this file.
+[Unit]
+Description=GnomeHome DNS log tailer (Pi-hole queries into SQLite)
+After=pihole-FTL.service
+
+[Service]
+Type=simple
+User=${user}
+Group=${user}
+# Pi-hole's log is readable by its group only.
+SupplementaryGroups=${pihole_log_group}
+Environment=GNOMEHOME_CONFIG=${config_file}
+ExecStart=${install_dir}/bin/gnomehome-dnstail
+# A stop stores queries still waiting for their reply, then exits.
+KillSignal=SIGTERM
+TimeoutStopSec=20s
+# An invalid protected-asset list stops the tailer on purpose. Restarting keeps
+# retrying, and every failure shows up in `systemctl status`.
+Restart=on-failure
+RestartSec=30s
+# Reads a local file only: no network at all, and no capabilities.
+PrivateNetwork=yes
+IPAddressDeny=any
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=${writable}
+ReadOnlyPaths=${readonly} ${pihole_log_dir}
+${hardening}
+# Always on, so it gets a tighter limit than the timer jobs (NFR-07).
+MemoryMax=64M
+
+[Install]
+WantedBy=multi-user.target

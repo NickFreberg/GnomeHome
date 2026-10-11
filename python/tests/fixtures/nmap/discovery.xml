@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<!-- Fake nmap -sn output. All addresses are documentation ranges. -->
+<nmaprun scanner="nmap" args="nmap -sn -n --excludefile nmap-exclude.txt -oX discovery.xml" start="1760191380" version="7.95" xmloutputversion="1.05">
+<verbose level="0"/>
+<debugging level="0"/>
+<host><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="192.0.2.1" addrtype="ipv4"/>
+<address addr="00:00:5E:00:53:A1" addrtype="mac" vendor="Example Router Co"/>
+<hostnames>
+</hostnames>
+<times srtt="1520" rttvar="5000" to="100000"/>
+</host>
+<host><status state="up" reason="localhost-response" reason_ttl="0"/>
+<address addr="192.0.2.5" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+</host>
+<host><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="192.0.2.20" addrtype="ipv4"/>
+<address addr="00:00:5E:00:53:B2" addrtype="mac" vendor="Example TV Inc"/>
+<hostnames>
+</hostnames>
+</host>
+<host><status state="up" reason="arp-response" reason_ttl="0"/>
+<address addr="192.0.2.30" addrtype="ipv4"/>
+<address addr="02:00:5E:00:53:C3" addrtype="mac"/>
+<hostnames>
+</hostnames>
+</host>
+<runstats><finished time="1760191383" summary="Nmap done; 256 IP addresses (4 hosts up) scanned in 2.10 seconds" elapsed="2.10" exit="success"/><hosts up="4" down="251" total="255"/>
+</runstats>
+</nmaprun>

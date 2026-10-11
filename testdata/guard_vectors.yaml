@@ -1,0 +1,63 @@
+# Protected-asset guard contract vectors.
+#
+# The Python guard (python/gnomehome/protected.py) passes every case today.
+# The Rust port (playbook engine and DNS tailer, later phases) must pass the
+# same cases. "protected: true" means the guard must refuse an active action
+# and drop the record in a passive collector.
+#
+# All values are fake (documentation ranges).
+
+protected_list: |
+  version: 1
+  protected:
+    - label: "Work laptop"
+      reason: "Employer-managed device."
+      macs:
+        - "00:00:5e:00:53:01"
+        - "00-00-5E-00-53-02"
+      ips:
+        - "192.0.2.10"
+        - "192.0.2.64/30"
+
+cases:
+  - { name: "exact MAC",                          mac: "00:00:5e:00:53:01", protected: true }
+  - { name: "uppercase with dashes (ipconfig)",   mac: "00-00-5E-00-53-01", protected: true }
+  - { name: "Cisco dotted",                       mac: "0000.5e00.5301",    protected: true }
+  - { name: "bare hex",                           mac: "00005E005301",      protected: true }
+  - { name: "macOS arp drops leading zeros",      mac: "0:0:5e:0:53:1",     protected: true }
+  - { name: "second MAC (dock) listed as dashes", mac: "00:00:5e:00:53:02", protected: true }
+  - { name: "surrounding whitespace",             mac: " 00:00:5e:00:53:01 ", protected: true }
+  - { name: "unrelated MAC",                      mac: "00:00:5e:00:53:99", protected: false }
+  - { name: "exact IP",                           ip: "192.0.2.10",         protected: true }
+  - { name: "IP inside protected CIDR",           ip: "192.0.2.66",         protected: true }
+  - { name: "first address after the CIDR",       ip: "192.0.2.68",         protected: false }
+  - { name: "IPv4-mapped IPv6",                   ip: "::ffff:192.0.2.10",  protected: true }
+  - { name: "unrelated IP",                       ip: "192.0.2.11",         protected: false }
+  - { name: "protected MAC at an unlisted IP",    mac: "00:00:5e:00:53:01", ip: "192.0.2.200", protected: true }
+  - { name: "unknown MAC at the protected IP",    mac: "00:00:5e:00:53:99", ip: "192.0.2.10",  protected: true }
+  - { name: "unknown MAC and unknown IP",         mac: "00:00:5e:00:53:99", ip: "192.0.2.200", protected: false }
+  - { name: "garbage MAC fails closed",           mac: "not-a-mac",         protected: true }
+  - { name: "mixed separators fail closed",       mac: "00:00-5e:00:53:01", protected: true }
+  - { name: "out-of-range IP fails closed",       ip: "192.0.2.999",        protected: true }
+  - { name: "leading zeros fail closed",          ip: "192.000.002.010",    protected: true }
+  - { name: "empty IP fails closed",              ip: "",                   protected: true }
+  - { name: "CIDR given as a target fails closed", ip: "192.0.2.0/24",      protected: true }
+
+# Free-text cases (syslog lines, hostnames): does the text mention a protected device?
+# Used by passive collectors that store text, such as the router syslog job.
+text_cases:
+  - { name: "firewall line from the protected IP",       text: "kernel: DROP IN=br0 OUT=eth0 SRC=192.0.2.10 DST=203.0.113.77 PROTO=TCP", protected: true }
+  - { name: "iptables MAC field (dst+src+type)",          text: "kernel: DROP IN=br0 MAC=ff:ff:ff:ff:ff:ff:00:00:5e:00:53:01:08:00 SRC=198.51.100.9", protected: true }
+  - { name: "IP inside protected CIDR",                   text: "dnsmasq-dhcp[1]: DHCPACK(br0) 192.0.2.66 00:00:5e:00:53:44 tv", protected: true }
+  - { name: "dashed uppercase MAC",                       text: "device 00-00-5E-00-53-02 joined", protected: true }
+  - { name: "unrelated IP",                               text: "httpd: login from 192.0.2.11", protected: false }
+  - { name: "no identifiers",                             text: "ntp: start NTP update", protected: false }
+  - { name: "firmware version is not an IP",              text: "firmware 3.0.0.4.388 build", protected: false }
+  - { name: "malformed address can't be anyone's",        text: "bad address 192.0.2.999", protected: false }
+  - { name: "empty text",                                 text: "", protected: false }
+  - { name: "address ending a sentence",                  text: "The check-in says to look at 192.0.2.10.", protected: true }
+  - { name: "address inside a hostname",                  text: "query[A] 192.0.2.10.nip.example from 192.0.2.30", protected: true }
+  - { name: "address after a word and a dot",             text: "seen host.192.0.2.10 today", protected: true }
+  - { name: "address after a double dot",                 text: "ref 1..192.0.2.10", protected: true }
+  - { name: "longer dotted number, digit before",         text: "build 1.192.0.2.10", protected: false }
+  - { name: "longer dotted number, digit after",          text: "version 192.0.2.10.5", protected: false }

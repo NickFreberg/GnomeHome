@@ -1,0 +1,5 @@
+# rustup reads this file and installs the matching toolchain automatically.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

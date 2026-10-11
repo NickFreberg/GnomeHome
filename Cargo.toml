@@ -1,0 +1,66 @@
+# GnomeHome Rust workspace.
+#
+# Rust owns the always-on and security-critical pieces (API and dashboard
+# backend, playbook engine, audit log, DNS log tailer). Shared pieces (the
+# protected-asset guard, audit log, database settings) live in gnomehome-core.
+#
+# Build note for the Pi: never add `-C target-cpu=native` (in RUSTFLAGS or a
+# .cargo/config.toml). The M1 has instructions the Pi's Cortex-A53 lacks, so
+# binaries must target generic aarch64. Cross-compile with `cross`, never on
+# the Pi itself.
+
+[workspace]
+resolver = "3"
+members = [
+    "crates/gnomehome-api",
+    "crates/gnomehome-core",
+    "crates/gnomehome-dnstail",
+    "crates/gnomehome-playbook",
+    "crates/gnomehome-web",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+gnomehome-core = { path = "crates/gnomehome-core" }
+gnomehome-playbook = { path = "crates/gnomehome-playbook" }
+argon2 = "0.5"
+axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+getrandom = "0.3"
+hmac = "0.12"
+rpassword = "7"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+sha1 = "0.10"
+tower-http = { version = "0.6", features = ["fs"] }
+axum = "0.8"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+sha2 = "0.11"
+signal-hook = { version = "0.3", default-features = false }
+tempfile = "3"
+yaml-rust2 = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
+toml = "1"
+tower = { version = "0.5", features = ["util"] }
+# Plain HTTP only (no TLS): the playbook engine talks to Pi-hole on loopback.
+ureq = { version = "3", default-features = false, features = ["json"] }
+http-body-util = "0.1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+# Small, fast binaries for a 1 GB Pi.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

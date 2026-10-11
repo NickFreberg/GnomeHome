@@ -1,0 +1,15 @@
+# Rendered by `just render-units` (install as /etc/logrotate.d/gnomehome).
+# Keeps [retention].syslog_days of raw router syslog, per the plan's data table.
+${router_syslog_path} {
+    daily
+    rotate ${syslog_days}
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0640 root ${user}
+    sharedscripts
+    postrotate
+        /usr/lib/rsyslog/rsyslog-rotate
+    endscript
+}

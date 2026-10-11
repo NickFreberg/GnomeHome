@@ -1,0 +1,11 @@
+# Rendered by `just render-units` from config/gnomehome.toml ([schedules] upload_nightly_at).
+[Unit]
+Description=Export yesterday's GnomeHome data nightly at ${upload_at}
+
+[Timer]
+OnCalendar=*-*-* ${upload_at}:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

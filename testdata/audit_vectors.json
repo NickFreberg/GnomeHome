@@ -1,0 +1,53 @@
+{
+  "_comment": "Audit log hash-chain vectors (spec: docs/audit-log.md). Python and Rust must both reproduce every hash. Fields are the stored column values; details is the stored JSON text.",
+  "encoding": "gnomehome-audit-v1",
+  "genesis_prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "entries": [
+    {
+      "seq": 1,
+      "ts": "2026-10-11T14:00:00.000Z",
+      "actor": "system:scan",
+      "action": "scan.start",
+      "target": null,
+      "result": "success",
+      "details": "{\"kind\":\"service\",\"targets\":1}",
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "hash": "483f95558c303cb7a4d1bbc936576ff90bc70740c562a372ff3a269cd823c055",
+      "canonical_utf8": "gnomehome-audit-v1\n1:1\n24:2026-10-11T14:00:00.000Z\n11:system:scan\n10:scan.start\n-\n7:success\n30:{\"kind\":\"service\",\"targets\":1}\n64:0000000000000000000000000000000000000000000000000000000000000000\n"
+    },
+    {
+      "seq": 2,
+      "ts": "2026-10-11T14:00:01.250Z",
+      "actor": "system:scan",
+      "action": "guard.refused",
+      "target": "protected:Work laptop",
+      "result": "refused",
+      "details": "{\"attempted_action\":\"scan.host\",\"matched_on\":\"mac\"}",
+      "prev_hash": "483f95558c303cb7a4d1bbc936576ff90bc70740c562a372ff3a269cd823c055",
+      "hash": "1f2a6038dabd7db4972700de4d4dd607ff8cea960eff7b64cc6ac4826c6628e7"
+    },
+    {
+      "seq": 3,
+      "ts": "2026-10-11T14:05:00.000Z",
+      "actor": "user:owner",
+      "action": "login",
+      "target": "",
+      "result": "failure",
+      "details": null,
+      "prev_hash": "1f2a6038dabd7db4972700de4d4dd607ff8cea960eff7b64cc6ac4826c6628e7",
+      "hash": "1d00e6d80c8aa2e315aa213eef845459ebb8a388ade3957e5b2a5746746ae918"
+    },
+    {
+      "seq": 4,
+      "ts": "2026-10-11T14:06:30.999Z",
+      "actor": "user:gnome 🍄",
+      "action": "note",
+      "target": "café",
+      "result": "success",
+      "details": "{\"msg\":\"naïve \\\"quoted\\\" \\\\ line\\nbreak\"}",
+      "prev_hash": "1d00e6d80c8aa2e315aa213eef845459ebb8a388ade3957e5b2a5746746ae918",
+      "hash": "ee4c8bf012cb67e75519c27c5177aa971a70eae4da47fbdd6673acb70666ab67",
+      "canonical_utf8": "gnomehome-audit-v1\n1:4\n24:2026-10-11T14:06:30.999Z\n15:user:gnome 🍄\n4:note\n5:café\n7:success\n42:{\"msg\":\"naïve \\\"quoted\\\" \\\\ line\\nbreak\"}\n64:1d00e6d80c8aa2e315aa213eef845459ebb8a388ade3957e5b2a5746746ae918\n"
+    }
+  ]
+}

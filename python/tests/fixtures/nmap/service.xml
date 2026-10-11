@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<!-- Fake nmap -sS -sV -O output. All addresses are documentation ranges. -->
+<nmaprun scanner="nmap" args="nmap -sS -sV -O -Pn -iL nmap-live-hosts.txt -oX service.xml" start="1760191390" version="7.95" xmloutputversion="1.05">
+<host><status state="up" reason="user-set" reason_ttl="0"/>
+<address addr="192.0.2.1" addrtype="ipv4"/>
+<address addr="00:00:5E:00:53:A1" addrtype="mac" vendor="Example Router Co"/>
+<hostnames>
+</hostnames>
+<ports><extraports state="closed" count="996"/>
+<port protocol="tcp" portid="22"><state state="closed" reason="reset" reason_ttl="64"/><service name="ssh" method="table" conf="3"/></port>
+<port protocol="tcp" portid="53"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="domain" product="dnsmasq" version="2.90" method="probed" conf="10"><cpe>cpe:/a:thekelleys:dnsmasq:2.90</cpe></service></port>
+<port protocol="tcp" portid="80"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="http" product="Example httpd" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="443"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="http" product="Example httpd" tunnel="ssl" extrainfo="router admin" method="probed" conf="10"/></port>
+</ports>
+<os><osmatch name="Linux 4.15 - 5.19" accuracy="98" line="1"><osclass type="WAP" vendor="Linux" osfamily="Linux" osgen="4.X" accuracy="98"/></osmatch></os>
+</host>
+<host><status state="up" reason="user-set" reason_ttl="0"/>
+<address addr="192.0.2.20" addrtype="ipv4"/>
+<address addr="00:00:5E:00:53:B2" addrtype="mac" vendor="Example TV Inc"/>
+<hostnames>
+</hostnames>
+<ports><extraports state="closed" count="998"/>
+<port protocol="tcp" portid="8008"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="http" method="probed" conf="10"/></port>
+<port protocol="tcp" portid="8009"><state state="open" reason="syn-ack" reason_ttl="64"/><service name="ssl/castv2" method="table" conf="3"/></port>
+</ports>
+<os><osmatch name="Android 10 - 12" accuracy="91" line="2"><osclass type="media device" vendor="Google" osfamily="Android" accuracy="91"/></osmatch></os>
+</host>
+<host><status state="up" reason="user-set" reason_ttl="0"/>
+<address addr="192.0.2.30" addrtype="ipv4"/>
+<address addr="02:00:5E:00:53:C3" addrtype="mac"/>
+<hostnames>
+</hostnames>
+<ports><extraports state="filtered" count="1000"/>
+</ports>
+</host>
+<runstats><finished time="1760191450" summary="Nmap done; 3 IP addresses (3 hosts up) scanned in 60.00 seconds" elapsed="60.00" exit="success"/><hosts up="3" down="0" total="3"/>
+</runstats>
+</nmaprun>

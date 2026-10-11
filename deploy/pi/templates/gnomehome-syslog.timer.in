@@ -1,0 +1,11 @@
+# Rendered by `just render-units` from config/gnomehome.toml ([schedules]).
+[Unit]
+Description=Run GnomeHome router syslog ingest every ${syslog_every} minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=${syslog_every}min
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

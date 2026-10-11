@@ -1,0 +1,205 @@
+# GnomeHome configuration
+# =======================
+#
+# This is the ONE config file for GnomeHome. `just setup` copies it to
+# config/gnomehome.toml, which is gitignored. Edit that copy, not this file.
+#
+# Everything here uses FAKE values. 192.0.2.0/24 is a documentation-only
+# network ("TEST-NET-1") that never exists on a real LAN, so the example can't
+# accidentally point at a real device. The scan job refuses to scan it.
+#
+# How paths work:
+#   - Relative paths are relative to THIS file's folder (config/), so "../data"
+#     means the data/ folder at the top of the repo.
+#   - "~" means your home folder.
+#   - Set GNOMEHOME_CONFIG=/some/other/file.toml to use a different file.
+
+# Which machine this is: "mac" (development) or "pi" (the sensor).
+# It picks which [platforms.<name>] table below is used.
+platform = "mac"
+
+[network]
+# Subnets the scan job may scan. Use your home LAN, e.g. the router's
+# network as shown in the ASUS app (often a /24). Must be a private
+# (RFC1918) range; anything else is refused.
+scan_targets = ["192.0.2.0/24"]
+# What counts as "inside the house" for analytics. Usually the same as above.
+lan_cidrs = ["192.0.2.0/24"]
+# The router's LAN address (its admin page address). On the Pi, rsyslog
+# accepts syslog only from this address.
+router_ip = "192.0.2.1"
+# Pi-hole's LAN address (the Pi's address once it's set up). Optional. Its own
+# upstream lookups are then never reported as a device skipping Pi-hole.
+pihole_ip = "192.0.2.2"
+
+[scan]
+top_ports = 1000          # how many common TCP ports the service scan checks
+service_detection = true  # nmap -sV: ask services what software and version they run
+os_detection = true       # nmap -O: guess the operating system
+timing = 3                # nmap -T3 (0 slowest to 5 fastest); 3 is nmap's normal pace
+host_timeout = "5m"       # give up on a single device after this long
+max_retries = 2
+reverse_dns = false       # look up hostnames via DNS (off: hostnames come from DHCP later)
+max_target_hosts = 1024   # refuse target ranges bigger than this (a /22)
+
+[schedules]
+# Used to generate launchd (Mac) or systemd (Pi) schedules. On the Mac you can
+# also just run jobs by hand with `just discover` and `just scan`.
+discovery_every_minutes = 10       # quick host discovery: new-device alert under 15 min
+service_scan_every_minutes = 240   # full service scan every 4 hours
+syslog_every_minutes = 1           # read new router syslog lines (DHCP: new devices in ~1-2 min)
+analyze_every_minutes = 60         # DNS analytics: beaconing, DGA bursts, threat intel matches
+flows_every_minutes = 1            # read the router's connection table over SSH (Pi)
+enrich_daily_at = "03:30"          # CVE/EPSS/KEV refresh (Phase 3)
+upload_nightly_at = "02:00"        # export yesterday's data and ship it to Azure (Phase 6)
+retention_daily_at = "04:00"       # delete data older than [retention]
+self_assessment_weekly = "Sun 09:00"
+checkin_fetch_weekly = "Sun 11:00"   # fetch the AI check-in (it runs Sundays 09:00 UTC in Azure)
+
+[retention]
+# Days of local history to keep (from the plan's Data understanding table).
+# The audit log is never deleted.
+dns_days = 30
+syslog_days = 30
+flow_days = 30
+scan_days = 90
+dhcp_days = 90
+
+[alerts]
+# When the inventory first starts, every device is "new". Devices first seen
+# within this many minutes of the inventory's start are the baseline and raise
+# no alert. Raise it to 1440 to learn for a whole day first.
+learning_minutes = 60
+
+[enrichment]
+# CVE data from NVD, exploitation odds from FIRST EPSS, and the CISA KEV list.
+nvd_refresh_hours = 24      # look each software version up again daily
+feed_refresh_hours = 20     # refresh the KEV catalog about daily
+
+[analytics]
+# DNS behavior detection (Phase 4). The defaults suit a home network.
+beacon_min_events = 12      # a domain looked up at least this often in 24 h ...
+beacon_max_jitter = 0.15    # ... at a rhythm steadier than this (15%) counts as beaconing
+dga_threshold = 0.45        # 0-1: how machine-generated a name must look
+dga_burst = 8               # this many such names from one device ...
+dga_window_minutes = 10     # ... within this many minutes, mostly NXDOMAIN, is a DGA burst
+# DNS servers outside the LAN that devices may use without being reported for skipping
+# Pi-hole, such as the backup DNS the router hands out (NFR-09). Example: ["9.9.9.9"]
+allowed_dns_servers = []
+
+[threat_intel]
+# Known-bad domain lists, refreshed daily. format = "hosts" or "domains".
+# Use `url` (https only) or `path` (a local file, relative to this folder).
+[[threat_intel.feeds]]
+name = "urlhaus"
+format = "hosts"
+url = "https://urlhaus.abuse.ch/downloads/hostfile/"
+
+[api]
+# The dashboard (just serve). 8787 avoids Pi-hole's dashboard on 8080.
+# On loopback it runs without TLS for development. On the Pi, bind to the Pi's LAN
+# address and set tls_cert and tls_key (PEM files, paths relative to this folder):
+# anywhere but loopback, the server refuses to start without HTTPS.
+bind = "127.0.0.1:8787"
+web_dir = "../web/dist"      # built by `just web-build`
+# tls_cert = "/etc/gnomehome/tls/dashboard.crt"
+# tls_key = "/etc/gnomehome/tls/dashboard.key"
+
+[cloud]
+# Phase 6: the nightly export's destination, an ADLS Gen2 storage account made by
+# infra/ (see infra/README.md). Leave storage_account empty to export locally only.
+# The SAS token lives in the file named by storage_sas_file, never in this file.
+storage_account = ""
+container = "raw"
+# Push notifications to the Azure mobile app (FR-16), from infra/ outputs. Leave empty
+# for local-only notifications. The client secret lives in monitor_secret_file.
+tenant_id = ""
+monitor_client_id = ""
+monitor_endpoint = ""        # the data collection endpoint's logs ingestion URL
+monitor_dcr_id = ""          # the data collection rule's immutable ID (dcr-...)
+
+[response]
+# Phase 7: the playbook engine (automated Blue Team). In "dry_run" mode every playbook
+# records what it would do and does nothing. To let an action run for real, set
+# mode = "live" AND list the action in live_actions. Disruptive actions (quarantine)
+# always wait for your approval first.
+mode = "dry_run"
+live_actions = []           # from "pihole.block_domain", "router.quarantine"
+approval_minutes = 60       # how long an approval request stays open
+pihole_api = "http://127.0.0.1/api"   # Pi-hole v6 API on this machine (loopback only)
+
+[synthetic]
+# Fake DNS and flow data for building later phases without real traffic.
+seed = 42                  # same seed, same data, every time
+days = 1
+start_date = "2026-10-05"
+
+# ---------------------------------------------------------------------------
+# Machine-specific settings. Only the table matching `platform` is used, but
+# both are checked so mistakes in the Pi section show up on the Mac.
+# ---------------------------------------------------------------------------
+
+[platforms.mac]
+data_dir = "../data"
+db_path = "../data/gnomehome.sqlite3"
+dev_db_path = "../data/dev.sqlite3"            # synthetic data goes here, never the real DB
+run_dir = "../data/run"                        # lock file, nmap exclude file
+scans_dir = "../data/scans"                    # raw nmap XML output
+synthetic_dir = "../data/synthetic"
+protected_assets = "protected_assets.yaml"     # i.e. config/protected_assets.yaml
+interface = "en0"                              # usually Wi-Fi on a MacBook; check with `ifconfig`
+nmap_path = "/opt/homebrew/bin/nmap"           # Homebrew on Apple silicon
+nmap_privilege = "sudo"                        # nmap needs root on macOS to see MAC addresses
+sudo_path = "/usr/bin/sudo"
+arp_command = ["/usr/sbin/arp", "-an"]         # read-only look at the ARP cache; sends nothing
+pihole_ftl_db = "../pihole/etc-pihole/pihole-FTL.db"   # Pi-hole in Docker (Appendix A)
+# pihole_log is not set: the Docker setup doesn't expose /var/log/pihole.
+scheduler = "manual"
+alert_channels = ["log", "macos"]              # "macos" shows a notification banner
+osascript_path = "/usr/bin/osascript"          # macOS's built-in tool for notifications
+# Optional: a file containing your free NVD API key (https://nvd.nist.gov/developers/request-an-api-key).
+# Keep it out of git; this path is outside the repo. Without a key, lookups are just slower.
+nvd_api_key_file = "~/.config/gnomehome/nvd_api_key"
+storage_sas_file = "~/.config/gnomehome/storage_sas"   # optional; see infra/README.md
+gnomehome_cli = "../.venv/bin/gnomehome"       # what the Rust playbook engine runs for Python actions
+playbooks_dir = "../playbooks"
+# router_syslog_path is not set: the router sends its syslog to the Pi.
+# On the Mac, `just synth-load` exercises the same code with synthetic syslog.
+
+[platforms.pi]
+data_dir = "/var/lib/gnomehome"
+db_path = "/var/lib/gnomehome/gnomehome.sqlite3"
+dev_db_path = "/var/lib/gnomehome/dev.sqlite3"
+run_dir = "/run/gnomehome"
+scans_dir = "/var/lib/gnomehome/scans"
+synthetic_dir = "/var/lib/gnomehome/synthetic"
+protected_assets = "/etc/gnomehome/protected_assets.yaml"
+interface = "eth0"
+nmap_path = "/usr/bin/nmap"
+nmap_privilege = "capabilities"                # granted by the systemd unit, see deploy/pi/README.md
+sudo_path = "/usr/bin/sudo"
+arp_command = ["/bin/ip", "neigh", "show"]     # check with `command -v ip` on the Pi
+pihole_ftl_db = "/etc/pihole/pihole-FTL.db"
+pihole_log = "/var/log/pihole/pihole.log"
+pihole_log_group = "pihole"                    # the DNS tailer joins this group to read pihole_log
+scheduler = "systemd"
+alert_channels = ["log"]                       # push to the iPhone comes in Phase 7
+router_syslog_path = "/var/log/gnomehome/router.log"   # written by rsyslog (deploy/pi)
+# Used only by `just render-units` to build the Pi's systemd files:
+install_dir = "/opt/gnomehome"                 # where the repo is checked out on the Pi
+service_user = "gnomehome"                     # unprivileged user the jobs run as
+config_file = "/etc/gnomehome/gnomehome.toml"  # this file's location on the Pi
+nvd_api_key_file = "/etc/gnomehome/nvd_api_key"   # optional, root:gnomehome 0640
+storage_sas_file = "/etc/gnomehome/storage_sas"   # optional, root:gnomehome 0640 (Phase 6 upload)
+pihole_password_file = "/etc/gnomehome/pihole_app_password"   # optional, root:gnomehome 0640 (Phase 7)
+monitor_secret_file = "/etc/gnomehome/monitor_secret"           # optional, root:gnomehome 0640 (push)
+reports_sas_file = "/etc/gnomehome/reports_sas"                 # optional, root:gnomehome 0640 (AI check-in)
+gnomehome_cli = "/opt/gnomehome/.venv/bin/gnomehome"
+playbooks_dir = "/opt/gnomehome/playbooks"
+# Router SSH for the connection-table pull (enable SSH, LAN only, key login, in the
+# router: Administration > System). The key must be owned by the service user, mode 0600.
+ssh_path = "/usr/bin/ssh"
+router_ssh_user = "admin"                      # your router admin user name
+router_ssh_port = 22
+router_ssh_key = "/etc/gnomehome/router_ssh_key"
+router_known_hosts = "/etc/gnomehome/router_known_hosts"   # pins the router's host key

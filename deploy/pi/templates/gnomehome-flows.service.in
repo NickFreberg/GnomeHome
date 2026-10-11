@@ -1,0 +1,21 @@
+# Rendered by `just render-units` from config/gnomehome.toml. Edit the config, not this file.
+[Unit]
+Description=GnomeHome router connection-table pull over SSH (FR-08)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${user}
+Group=${user}
+Environment=GNOMEHOME_CONFIG=${config_file}
+ExecStart=${install_dir}/.venv/bin/gnomehome flows
+TimeoutStartSec=2min
+# Talks to the router only, over SSH, and needs no capabilities.
+IPAddressAllow=${router_ip}
+IPAddressDeny=any
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=${writable}
+ReadOnlyPaths=${readonly}
+${hardening}

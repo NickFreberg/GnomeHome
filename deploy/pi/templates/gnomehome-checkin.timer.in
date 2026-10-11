@@ -1,0 +1,10 @@
+# Rendered by `just render-units` from config/gnomehome.toml ([schedules] checkin_fetch_weekly).
+[Unit]
+Description=Import the GnomeHome AI check-in (${checkin_when})
+
+[Timer]
+OnCalendar=${checkin_calendar}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

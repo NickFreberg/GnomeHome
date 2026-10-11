@@ -1,0 +1,22 @@
+# Rendered by `just render-units` from config/gnomehome.toml. Edit the config, not this file.
+[Unit]
+Description=GnomeHome daily enrichment (NVD, EPSS, KEV, threat-intel feeds) and risk scores
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${user}
+Group=${user}
+Environment=GNOMEHOME_CONFIG=${config_file}
+# The leading "-" lets scoring run even if a feed was unreachable; enrich logs the problem.
+ExecStart=-${install_dir}/.venv/bin/gnomehome enrich
+ExecStart=-${install_dir}/.venv/bin/gnomehome intel
+ExecStart=${install_dir}/.venv/bin/gnomehome score
+TimeoutStartSec=1h
+# Talks to NVD, FIRST, CISA, and the threat feeds over HTTPS; needs no capabilities.
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=${writable}
+ReadOnlyPaths=${readonly}
+${hardening}
