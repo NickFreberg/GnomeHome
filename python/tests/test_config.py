@@ -98,3 +98,35 @@ def test_platform_mismatch_warning(config_path: Path, monkeypatch):
     assert platform_mismatch(config) is None
     monkeypatch.setattr("sys.platform", "linux")
     assert "mac" in (platform_mismatch(config) or "")
+
+
+def test_alert_and_syslog_settings(config_path: Path):
+    config = load_config(config_path)
+    assert config.paths.alert_channels == ("log", "macos")
+    assert config.paths.osascript_path == Path("/usr/bin/osascript")
+    assert config.paths.router_syslog_path is None
+    assert config.alerts.learning_minutes == 60
+    assert config.schedules.syslog_every_minutes == 1
+    assert config.network.router_ip == "192.0.2.1"
+    pi = config.platforms["pi"]
+    assert pi.router_syslog_path == Path("/var/log/gnomehome/router.log")
+    assert pi.install_dir == Path("/opt/gnomehome")
+    assert pi.service_user == "gnomehome"
+    assert pi.alert_channels == ("log",)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ('alert_channels = ["log"]', 'alert_channels = ["log", "macos"]', "only works on the Mac"),
+        ('alert_channels = ["log", "macos"]', 'alert_channels = ["pager"]', "alert_channels"),
+        ('osascript_path = "/usr/bin/osascript"', "", "needs osascript_path"),
+        ('router_ip = "192.0.2.1"', 'router_ip = "router.local"', "not an IPv4"),
+        ('service_user = "gnomehome"', 'service_user = "root; rm -rf /"', "valid user name"),
+        ("learning_minutes = 60", "learning_minutes = -1", "between 0"),
+        ('install_dir = "/opt/gnomehome"', 'install_dir = "gnomehome"', "absolute"),
+    ],
+)
+def test_invalid_alert_and_deploy_values(tmp_path: Path, old: str, new: str, message: str):
+    with pytest.raises(ConfigError, match=message):
+        load_config(write_config(tmp_path, {old: new}))

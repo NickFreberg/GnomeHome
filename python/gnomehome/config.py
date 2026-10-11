@@ -30,11 +30,13 @@ ENV_VAR = "GNOMEHOME_CONFIG"
 DEFAULT_CONFIG_PATH = Path("config") / "gnomehome.toml"
 PLATFORMS = ("mac", "pi")
 NMAP_PRIVILEGE_MODES = ("sudo", "capabilities", "none")
+ALERT_CHANNELS = ("log", "macos")
 SCHEDULERS = ("manual", "launchd", "systemd")
 
 _INTERFACE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,14}$")
 _NMAP_TIME_RE = re.compile(r"^[1-9][0-9]*(ms|s|m|h)$")
 _DAILY_RE = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
+_USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 _WEEKLY_RE = re.compile(r"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) ([01][0-9]|2[0-3]):[0-5][0-9]$")
 
 
@@ -48,6 +50,8 @@ class NetworkConfig:
     scan_targets: tuple[str, ...]
     #: What counts as "inside the house" for analytics.
     lan_cidrs: tuple[str, ...]
+    #: The router's LAN address: the only sender rsyslog accepts on the Pi.
+    router_ip: str | None = None
 
 
 @dataclass(frozen=True)
@@ -66,6 +70,7 @@ class ScanConfig:
 class SchedulesConfig:
     discovery_every_minutes: int = 10
     service_scan_every_minutes: int = 240
+    syslog_every_minutes: int = 1
     enrich_daily_at: str = "03:30"
     upload_nightly_at: str = "02:00"
     retention_daily_at: str = "04:00"
@@ -79,6 +84,12 @@ class RetentionConfig:
     flow_days: int = 30
     scan_days: int = 90
     dhcp_days: int = 90
+
+
+@dataclass(frozen=True)
+class AlertsConfig:
+    #: Devices first seen this soon after the inventory started are the baseline: no alert.
+    learning_minutes: int = 60
 
 
 @dataclass(frozen=True)
@@ -112,6 +123,14 @@ class PlatformConfig:
     pihole_ftl_db: Path
     pihole_log: Path | None
     scheduler: str
+    alert_channels: tuple[str, ...] = ("log",)
+    osascript_path: Path | None = None
+    #: Where rsyslog writes the router's messages (Pi only; router syslog goes to the Pi).
+    router_syslog_path: Path | None = None
+    # Deploy-only keys, used to render the Pi's systemd units.
+    install_dir: Path | None = None
+    service_user: str | None = None
+    config_file: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -123,8 +142,11 @@ class Config:
     scan: ScanConfig = field(default_factory=ScanConfig)
     schedules: SchedulesConfig = field(default_factory=SchedulesConfig)
     retention: RetentionConfig = field(default_factory=RetentionConfig)
+    alerts: AlertsConfig = field(default_factory=AlertsConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
     synthetic: SyntheticConfig = field(default_factory=SyntheticConfig)
+    #: Every platform table, so the Pi's files can be rendered on the Mac.
+    platforms: dict[str, PlatformConfig] = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------
@@ -168,6 +190,7 @@ def parse_config(data: dict[str, Any], config_path: Path) -> Config:
             "scan",
             "schedules",
             "retention",
+            "alerts",
             "api",
             "synthetic",
             "platforms",
@@ -198,8 +221,10 @@ def parse_config(data: dict[str, Any], config_path: Path) -> Config:
         scan=_parse_scan(_table(data, "scan")),
         schedules=_parse_schedules(_table(data, "schedules")),
         retention=_parse_retention(_table(data, "retention")),
+        alerts=_parse_alerts(_table(data, "alerts")),
         api=_parse_api(_table(data, "api")),
         synthetic=_parse_synthetic(_table(data, "synthetic")),
+        platforms=parsed,
     )
 
 
@@ -210,10 +235,17 @@ def parse_config(data: dict[str, Any], config_path: Path) -> Config:
 
 def _parse_network(table: dict[str, Any]) -> NetworkConfig:
     where = "[network]"
-    _reject_unknown(table, {"scan_targets", "lan_cidrs"}, where)
+    _reject_unknown(table, {"scan_targets", "lan_cidrs", "router_ip"}, where)
+    router_ip = _get(table, "router_ip", str, None, where)
+    if router_ip is not None:
+        try:
+            router_ip = str(ipaddress.IPv4Address(router_ip))
+        except ValueError:
+            raise ConfigError(f"{where} router_ip {router_ip!r} is not an IPv4 address") from None
     return NetworkConfig(
         scan_targets=_cidr_list(table, "scan_targets", where),
         lan_cidrs=_cidr_list(table, "lan_cidrs", where),
+        router_ip=router_ip,
     )
 
 
@@ -241,7 +273,7 @@ def _parse_schedules(table: dict[str, Any]) -> SchedulesConfig:
     d = SchedulesConfig()
     _reject_unknown(table, set(d.__dataclass_fields__), where)
     values: dict[str, Any] = {}
-    for key in ("discovery_every_minutes", "service_scan_every_minutes"):
+    for key in ("discovery_every_minutes", "service_scan_every_minutes", "syslog_every_minutes"):
         values[key] = _int_range(table, key, getattr(d, key), 1, 7 * 24 * 60, where)
     for key in ("enrich_daily_at", "upload_nightly_at", "retention_daily_at"):
         value = _get(table, key, str, getattr(d, key), where)
@@ -264,6 +296,15 @@ def _parse_retention(table: dict[str, Any]) -> RetentionConfig:
             key: _int_range(table, key, getattr(d, key), 1, 3650, where)
             for key in d.__dataclass_fields__
         }
+    )
+
+
+def _parse_alerts(table: dict[str, Any]) -> AlertsConfig:
+    where = "[alerts]"
+    _reject_unknown(table, {"learning_minutes"}, where)
+    default = AlertsConfig().learning_minutes
+    return AlertsConfig(
+        learning_minutes=_int_range(table, "learning_minutes", default, 0, 30 * 24 * 60, where)
     )
 
 
@@ -312,6 +353,12 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
             "arp_command",
             "pihole_log",
             "scheduler",
+            "alert_channels",
+            "osascript_path",
+            "router_syslog_path",
+            "install_dir",
+            "service_user",
+            "config_file",
         },
         where,
     )
@@ -345,6 +392,32 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
     if pihole_log is not None and not isinstance(pihole_log, str):
         raise ConfigError(f"{where} pihole_log must be a string path")
 
+    channels = table.get("alert_channels", ["log"])
+    if (
+        not isinstance(channels, list)
+        or not channels
+        or not all(isinstance(c, str) and c in ALERT_CHANNELS for c in channels)
+    ):
+        raise ConfigError(f"{where} alert_channels must be a non-empty list from {ALERT_CHANNELS}")
+    osascript = table.get("osascript_path")
+    if "macos" in channels:
+        if name != "mac":
+            raise ConfigError(f'{where} the "macos" alert channel only works on the Mac')
+        if osascript is None:
+            raise ConfigError(f'{where} the "macos" alert channel needs osascript_path')
+
+    service_user = _get(table, "service_user", str, None, where)
+    if service_user is not None and not _USER_RE.match(service_user):
+        raise ConfigError(f"{where} service_user {service_user!r} is not a valid user name")
+
+    def optional_path(key: str) -> Path | None:
+        value = _get(table, key, str, None, where)
+        return _resolve(value, base_dir) if value is not None else None
+
+    def optional_absolute(key: str) -> Path | None:
+        value = _get(table, key, str, None, where)
+        return _absolute_str(value, f"{where} {key}") if value is not None else None
+
     return PlatformConfig(
         **paths,
         interface=interface,
@@ -354,6 +427,12 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
         arp_command=(str(arp_binary), *arp_command[1:]),
         pihole_log=_resolve(pihole_log, base_dir) if pihole_log else None,
         scheduler=scheduler,
+        alert_channels=tuple(dict.fromkeys(channels)),
+        osascript_path=optional_absolute("osascript_path"),
+        router_syslog_path=optional_path("router_syslog_path"),
+        install_dir=optional_absolute("install_dir"),
+        service_user=service_user,
+        config_file=optional_absolute("config_file"),
     )
 
 

@@ -25,6 +25,9 @@ platform = "mac"
 scan_targets = ["192.0.2.0/24"]
 # What counts as "inside the house" for analytics. Usually the same as above.
 lan_cidrs = ["192.0.2.0/24"]
+# The router's LAN address (its admin page address). On the Pi, rsyslog
+# accepts syslog only from this address.
+router_ip = "192.0.2.1"
 
 [scan]
 top_ports = 1000          # how many common TCP ports the service scan checks
@@ -41,6 +44,7 @@ max_target_hosts = 1024   # refuse target ranges bigger than this (a /22)
 # also just run jobs by hand with `just discover` and `just scan`.
 discovery_every_minutes = 10       # quick host discovery: new-device alert under 15 min
 service_scan_every_minutes = 240   # full service scan every 4 hours
+syslog_every_minutes = 1           # read new router syslog lines (DHCP: new devices in ~1-2 min)
 enrich_daily_at = "03:30"          # CVE/EPSS/KEV refresh (Phase 3)
 upload_nightly_at = "02:00"        # ship data to Azure (Phase 6)
 retention_daily_at = "04:00"       # delete data older than [retention]
@@ -54,6 +58,12 @@ syslog_days = 30
 flow_days = 30
 scan_days = 90
 dhcp_days = 90
+
+[alerts]
+# When the inventory first starts, every device is "new". Devices first seen
+# within this many minutes of the inventory's start are the baseline and raise
+# no alert. Raise it to 1440 to learn for a whole day first.
+learning_minutes = 60
 
 [api]
 # The Rust API stub. Loopback only until TLS and logins exist (Phase 8).
@@ -87,6 +97,10 @@ arp_command = ["/usr/sbin/arp", "-an"]         # read-only look at the ARP cache
 pihole_ftl_db = "../pihole/etc-pihole/pihole-FTL.db"   # Pi-hole in Docker (Appendix A)
 # pihole_log is not set: the Docker setup doesn't expose /var/log/pihole.
 scheduler = "manual"
+alert_channels = ["log", "macos"]              # "macos" shows a notification banner
+osascript_path = "/usr/bin/osascript"          # macOS's built-in tool for notifications
+# router_syslog_path is not set: the router sends its syslog to the Pi.
+# On the Mac, `just synth-load` exercises the same code with synthetic syslog.
 
 [platforms.pi]
 data_dir = "/var/lib/gnomehome"
@@ -98,9 +112,15 @@ synthetic_dir = "/var/lib/gnomehome/synthetic"
 protected_assets = "/etc/gnomehome/protected_assets.yaml"
 interface = "eth0"
 nmap_path = "/usr/bin/nmap"
-nmap_privilege = "capabilities"                # setcap on nmap, see deploy/pi/README.md
+nmap_privilege = "capabilities"                # granted by the systemd unit, see deploy/pi/README.md
 sudo_path = "/usr/bin/sudo"
 arp_command = ["/bin/ip", "neigh", "show"]     # check with `command -v ip` on the Pi
 pihole_ftl_db = "/etc/pihole/pihole-FTL.db"
 pihole_log = "/var/log/pihole/pihole.log"
 scheduler = "systemd"
+alert_channels = ["log"]                       # push to the iPhone comes in Phase 7
+router_syslog_path = "/var/log/gnomehome/router.log"   # written by rsyslog (deploy/pi)
+# Used only by `just render-units` to build the Pi's systemd files:
+install_dir = "/opt/gnomehome"                 # where the repo is checked out on the Pi
+service_user = "gnomehome"                     # unprivileged user the jobs run as
+config_file = "/etc/gnomehome/gnomehome.toml"  # this file's location on the Pi
