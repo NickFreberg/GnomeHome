@@ -133,9 +133,9 @@ _UNPARSEABLE = ProtectedEntry(
 class _StrictLoader(yaml.BaseLoader):
     """YAML loader that keeps every scalar a string and rejects duplicate keys.
 
-    PyYAML's default loaders follow YAML 1.1, where an unquoted value like
-    ``10:20:30:40:50:59`` is a base-60 integer. A duplicate key would also
-    silently drop the first value (and with it, a MAC address).
+    PyYAML's default loaders follow YAML 1.1, where an unquoted MAC made only
+    of digit pairs (each 59 or less) is read as a base-60 integer. A duplicate
+    key would also silently drop the first value (and with it, a MAC address).
     """
 
     def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:

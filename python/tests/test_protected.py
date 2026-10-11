@@ -166,8 +166,8 @@ def test_missing_file_is_refused(tmp_path: Path):
 
 def test_unquoted_all_digit_mac_stays_a_string():
     # In YAML 1.1 this unquoted value is a base-60 integer. The strict loader keeps it a string.
-    assets = ProtectedAssets.parse(_list_yaml(macs=["10:20:30:40:50:58"]))
-    assert Guard(assets).is_protected(mac="10-20-30-40-50-58")
+    assets = ProtectedAssets.parse(_list_yaml(macs=["10:20:30:40:50:58"]))  # hygiene: allow
+    assert Guard(assets).is_protected(mac="10-20-30-40-50-58")  # hygiene: allow
 
 
 @pytest.mark.parametrize(
