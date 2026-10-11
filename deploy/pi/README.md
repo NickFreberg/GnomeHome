@@ -21,6 +21,7 @@ user, schedule, or IP is hardcoded.
 | `gnomehome-analyze.service` / `.timer` | `/etc/systemd/system/` | DNS analytics every `analyze_every_minutes` (beaconing, DGA, threat intel, DNS bypass) |
 | `gnomehome-flows.service` / `.timer` | `/etc/systemd/system/` | Router connection-table pull over SSH every `flows_every_minutes` |
 | `gnomehome-dnstail.service` | `/etc/systemd/system/` | Always on: follows `pihole_log` into the database (the Rust tailer) |
+| `gnomehome-export.service` / `.timer` | `/etc/systemd/system/` | Nightly at `upload_nightly_at`: export yesterday (protected rows dropped) and upload it if `[cloud]` is configured |
 | `tmpfiles-gnomehome.conf` | `/etc/tmpfiles.d/gnomehome.conf` | Creates the data, scans, and run folders at boot |
 | `rsyslog-gnomehome.conf` | `/etc/rsyslog.d/30-gnomehome.conf` | Accepts the router's syslog (UDP 514, from `router_ip` only) into `router_syslog_path` |
 | `logrotate-gnomehome` | `/etc/logrotate.d/gnomehome` | Keeps `retention.syslog_days` of raw router syslog |

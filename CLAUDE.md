@@ -87,6 +87,12 @@ a portfolio piece, so code, docs, and commits should read well to a reviewer.
 - DNS analytics: `analytics/detect.py` (beaconing, DGA, threat intel, DNS bypass), `analytics/run.py`
   (checkpoints in `analysis_checkpoint`, findings to incidents), `analytics/intel.py` (feeds). Router flows:
   `conntrack.py` parser, `collectors/router_flows.py` (one fixed SSH command, pinned host key).
+- Cloud and ML (Phase 6): `export.py` (nightly JSON Lines, every value re-checked by the guard, manifest
+  with checksums and the audit head), `upload.py` (write-only SAS, dry run by default, never prints the
+  token), `ml/` (features, anomaly, classifier: pure Python, reused by `databricks/src/`), `summary.py` (the
+  weekly document for the AI check-in). `infra/` is Bicep (`just infra-check`). Nothing in `infra/` or
+  `databricks/` is ever deployed by tooling here: the owner runs those commands. The protected list never
+  leaves the Pi.
 - Rust: `crates/gnomehome-core` (guard, audit, DB settings, config subset, timestamps; tests apply the real
   migrations via the `testkit` feature), `crates/gnomehome-dnstail` (Pi-hole log tailer: `parse.rs`,
   `pair.rs`, `lib.rs`). Rust reads `MIN_SCHEMA_VERSION` only; Python still owns migrations.
