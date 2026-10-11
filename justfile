@@ -82,6 +82,10 @@ intel *args:
 flows:
     {{gnomehome}} flows
 
+# Follow Pi-hole's log into the database (Rust). Try: just dnstail --dev --once --log <file> --clock utc
+dnstail *args:
+    cargo run --quiet --release --package gnomehome-dnstail -- {{args}}
+
 # Domains each device looked up for the first time (--hours N, --dev)
 new-domains *args:
     {{gnomehome}} new-domains {{args}}
@@ -159,3 +163,8 @@ render-units *args:
 # Run the API stub on loopback (address from [api].bind in config/gnomehome.toml)
 serve:
     cargo run --package gnomehome-api
+
+# Generic aarch64 only: never add target-cpu=native (the Pi's CPU lacks M1 instructions).
+# Cross-compile the Rust services for the Pi (needs `cargo install cross` and Docker running)
+build-pi:
+    cross build --release --target aarch64-unknown-linux-gnu --package gnomehome-dnstail

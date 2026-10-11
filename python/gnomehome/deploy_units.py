@@ -33,7 +33,14 @@ def render_pi_files(
         raise RenderError(f"no [platforms.{platform}] table in {config.path}")
     missing = [
         key
-        for key in ("install_dir", "service_user", "config_file", "router_syslog_path")
+        for key in (
+            "install_dir",
+            "service_user",
+            "config_file",
+            "router_syslog_path",
+            "pihole_log",
+            "pihole_log_group",
+        )
         if getattr(p, key) is None
     ]
     if config.network.router_ip is None:
@@ -45,7 +52,7 @@ def render_pi_files(
         {p.data_dir, p.db_path.parent, p.dev_db_path.parent, p.scans_dir, p.run_dir}, key=str
     )
     readonly = sorted({p.install_dir, p.protected_assets.parent, p.config_file.parent}, key=str)
-    for path in (*writable_dirs, *readonly, p.router_syslog_path):
+    for path in (*writable_dirs, *readonly, p.router_syslog_path, p.pihole_log):
         if any(ch.isspace() for ch in str(path)):
             raise RenderError(f"paths used in systemd units can't contain spaces: {path}")
 
@@ -58,9 +65,13 @@ def render_pi_files(
         "router_syslog_path": str(p.router_syslog_path),
         "router_syslog_dir": str(p.router_syslog_path.parent),
         "router_ip": config.network.router_ip,
+        "pihole_log_dir": str(p.pihole_log.parent),
+        "pihole_log_group": p.pihole_log_group,
         "discover_every": str(config.schedules.discovery_every_minutes),
         "scan_every": str(config.schedules.service_scan_every_minutes),
         "syslog_every": str(config.schedules.syslog_every_minutes),
+        "analyze_every": str(config.schedules.analyze_every_minutes),
+        "flows_every": str(config.schedules.flows_every_minutes),
         "enrich_at": config.schedules.enrich_daily_at,
         "syslog_days": str(config.retention.syslog_days),
         "tmpfiles_lines": "\n".join(

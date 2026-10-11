@@ -1,0 +1,11 @@
+# Rendered by `just render-units` from config/gnomehome.toml ([schedules]).
+[Unit]
+Description=Run GnomeHome DNS analytics every ${analyze_every} minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=${analyze_every}min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

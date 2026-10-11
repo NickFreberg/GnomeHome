@@ -1,0 +1,19 @@
+# Rendered by `just render-units` from config/gnomehome.toml. Edit the config, not this file.
+[Unit]
+Description=GnomeHome DNS analytics (new domains, beaconing, DGA, threat intel, DNS bypass)
+
+[Service]
+Type=oneshot
+User=${user}
+Group=${user}
+Environment=GNOMEHOME_CONFIG=${config_file}
+ExecStart=${install_dir}/.venv/bin/gnomehome analyze
+TimeoutStartSec=30min
+# Works on the database only: no network at all, and no capabilities.
+PrivateNetwork=yes
+IPAddressDeny=any
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=${writable}
+ReadOnlyPaths=${readonly}
+${hardening}

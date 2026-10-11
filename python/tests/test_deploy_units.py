@@ -24,6 +24,9 @@ def test_every_template_renders_with_no_placeholders_left(files):
         "gnomehome-scan.service", "gnomehome-scan.timer",
         "gnomehome-syslog.service", "gnomehome-syslog.timer",
         "gnomehome-enrich.service", "gnomehome-enrich.timer",
+        "gnomehome-analyze.service", "gnomehome-analyze.timer",
+        "gnomehome-flows.service", "gnomehome-flows.timer",
+        "gnomehome-dnstail.service",
         "tmpfiles-gnomehome.conf", "rsyslog-gnomehome.conf", "logrotate-gnomehome",
     }  # fmt: skip
     for name, content in files.items():
@@ -31,7 +34,7 @@ def test_every_template_renders_with_no_placeholders_left(files):
 
 
 def test_services_run_the_venv_command_as_the_service_user(files):
-    for job in ("discover", "scan", "syslog"):
+    for job in ("discover", "scan", "syslog", "analyze", "flows"):
         unit = files[f"gnomehome-{job}.service"]
         assert f"ExecStart=/opt/gnomehome/.venv/bin/gnomehome {job}\n" in unit
         assert "User=gnomehome\n" in unit
@@ -45,8 +48,11 @@ def test_raw_socket_rights_only_for_the_nmap_jobs(files):
         unit = files[f"gnomehome-{job}.service"]
         assert "AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN" in unit
         assert "SuccessExitStatus=75" in unit
+    for job in ("syslog", "analyze", "flows", "dnstail", "enrich"):
+        unit = files[f"gnomehome-{job}.service"]
+        assert "AmbientCapabilities" not in unit, job
+        assert "CapabilityBoundingSet=\n" in unit, job
     syslog = files["gnomehome-syslog.service"]
-    assert "AmbientCapabilities" not in syslog
     assert "CapabilityBoundingSet=\n" in syslog
     assert "PrivateNetwork=yes" in syslog
     assert "/var/log/gnomehome" in syslog  # may read the router log
@@ -58,6 +64,26 @@ def test_timers_follow_the_config_schedules(tmp_path: Path):
     assert "OnUnitActiveSec=7min" in files["gnomehome-discover.timer"]
     assert "OnUnitActiveSec=240min" in files["gnomehome-scan.timer"]
     assert "OnUnitActiveSec=1min" in files["gnomehome-syslog.timer"]
+    assert "OnUnitActiveSec=60min" in files["gnomehome-analyze.timer"]
+    assert "OnUnitActiveSec=1min" in files["gnomehome-flows.timer"]
+
+
+def test_dns_tailer_is_long_running_offline_and_small(files):
+    unit = files["gnomehome-dnstail.service"]
+    assert "Type=simple" in unit
+    assert "ExecStart=/opt/gnomehome/bin/gnomehome-dnstail\n" in unit
+    assert "SupplementaryGroups=pihole\n" in unit
+    assert "PrivateNetwork=yes" in unit
+    assert "ReadOnlyPaths=/etc/gnomehome /opt/gnomehome /var/log/pihole\n" in unit
+    # The tighter limit comes after the shared 256M one, so it wins.
+    assert unit.rindex("MemoryMax=64M") > unit.index("MemoryMax=256M")
+    assert "WantedBy=multi-user.target" in unit
+
+
+def test_flows_may_reach_only_the_router(files):
+    unit = files["gnomehome-flows.service"]
+    assert "IPAddressAllow=192.0.2.1\nIPAddressDeny=any\n" in unit
+    assert "PrivateNetwork" not in unit
 
 
 def test_rsyslog_accepts_only_the_router_and_logrotate_keeps_retention(files):
@@ -111,5 +137,6 @@ def test_enrichment_runs_daily_and_scores_even_if_a_feed_fails(files):
     assert "OnCalendar=*-*-* 03:30:00" in files["gnomehome-enrich.timer"]
     unit = files["gnomehome-enrich.service"]
     assert "ExecStart=-/opt/gnomehome/.venv/bin/gnomehome enrich" in unit
+    assert "ExecStart=-/opt/gnomehome/.venv/bin/gnomehome intel" in unit
     assert "ExecStart=/opt/gnomehome/.venv/bin/gnomehome score" in unit
     assert "AmbientCapabilities" not in unit

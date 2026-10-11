@@ -17,7 +17,10 @@ user, schedule, or IP is hardcoded.
 | `gnomehome-discover.service` / `.timer` | `/etc/systemd/system/` | Host discovery every `discovery_every_minutes` |
 | `gnomehome-scan.service` / `.timer` | `/etc/systemd/system/` | Service scan every `service_scan_every_minutes` |
 | `gnomehome-syslog.service` / `.timer` | `/etc/systemd/system/` | Router syslog ingest every `syslog_every_minutes` (DHCP, new-device and drift alerts) |
-| `gnomehome-enrich.service` / `.timer` | `/etc/systemd/system/` | Daily at `enrich_daily_at`: CVEs from NVD, EPSS, KEV, then risk scores |
+| `gnomehome-enrich.service` / `.timer` | `/etc/systemd/system/` | Daily at `enrich_daily_at`: CVEs from NVD, EPSS, KEV, threat-intel feeds, then risk scores |
+| `gnomehome-analyze.service` / `.timer` | `/etc/systemd/system/` | DNS analytics every `analyze_every_minutes` (beaconing, DGA, threat intel, DNS bypass) |
+| `gnomehome-flows.service` / `.timer` | `/etc/systemd/system/` | Router connection-table pull over SSH every `flows_every_minutes` |
+| `gnomehome-dnstail.service` | `/etc/systemd/system/` | Always on: follows `pihole_log` into the database (the Rust tailer) |
 | `tmpfiles-gnomehome.conf` | `/etc/tmpfiles.d/gnomehome.conf` | Creates the data, scans, and run folders at boot |
 | `rsyslog-gnomehome.conf` | `/etc/rsyslog.d/30-gnomehome.conf` | Accepts the router's syslog (UDP 514, from `router_ip` only) into `router_syslog_path` |
 | `logrotate-gnomehome` | `/etc/logrotate.d/gnomehome` | Keeps `retention.syslog_days` of raw router syslog |
@@ -30,7 +33,12 @@ user, schedule, or IP is hardcoded.
   addresses. Only the discover and scan units get them, as *ambient capabilities* that nmap inherits.
   That's the plan's "capabilities only to what needs them", without `setcap` on the system nmap binary,
   which would let any user on the Pi send raw packets. No sudo is involved.
-- **No network for the syslog job.** It reads one local file, so it runs with `PrivateNetwork=yes` and no capabilities.
+- **No network where none is needed.** The syslog, analyze, and DNS tailer services work on local files and the
+  database only, so they run with `PrivateNetwork=yes` and no capabilities. The flows service may reach the
+  router's address and nothing else (`IPAddressAllow=router_ip`).
+- **The always-on tailer is small.** `MemoryMax=64M`, and it joins `pihole_log_group` only to read Pi-hole's log.
+  If the protected-asset list becomes invalid, it stops instead of running unguarded, and systemd keeps
+  retrying every 30 seconds so the failure shows in `systemctl status`.
 - **A busy lock is a quiet skip.** Exit code 75 ("another scan holds the lock") counts as success, so the
   discover and scan timers can overlap.
 
@@ -97,6 +105,28 @@ $G protected-check
 $G scan --dry-run
 ```
 
+**5b. Rust binaries (built on the Mac)**
+
+The DNS tailer is Rust. Build it on the Mac for the Pi's CPU, then copy it over. `cross` builds inside a
+Docker container, so Docker Desktop must be running. On the **Mac**:
+
+```
+cargo install cross --locked     # once; installs into ~/.cargo/bin (no sudo)
+just build-pi                    # target/aarch64-unknown-linux-gnu/release/
+scp target/aarch64-unknown-linux-gnu/release/gnomehome-dnstail <you>@<pi>:
+```
+
+Then on the **Pi**:
+
+```
+sudo install -D -o root -g root -m 0755 ~/gnomehome-dnstail /opt/gnomehome/bin/gnomehome-dnstail
+ls -l /var/log/pihole/pihole.log     # check the group matches pihole_log_group (usually pihole)
+sudo -u gnomehome env GNOMEHOME_CONFIG=/etc/gnomehome/gnomehome.toml /opt/gnomehome/bin/gnomehome-dnstail --once
+```
+
+The `--once` run should report queries stored. If it reports a permission error, the log's group differs
+from `pihole_log_group`: fix the config and render the units again.
+
 **6. Point the router's syslog at the Pi**
 
 In the router: **Administration**, then **System**, then set **Remote Log Server** to the Pi's IP. Check that lines arrive:
@@ -114,9 +144,26 @@ On the Pi, the scan in step 3 of that runbook is `sudo systemctl start gnomehome
 **8. Turn on the schedules**
 
 ```
-sudo systemctl enable --now gnomehome-syslog.timer gnomehome-discover.timer gnomehome-scan.timer gnomehome-enrich.timer
+sudo systemctl enable --now gnomehome-dnstail.service
+sudo systemctl enable --now gnomehome-syslog.timer gnomehome-discover.timer gnomehome-scan.timer gnomehome-enrich.timer gnomehome-analyze.timer
 systemctl list-timers 'gnomehome-*'
 ```
+
+**9. Optional: router connection data (FR-08)**
+
+Phases 1 to 3 don't need this (risk R-06: a firmware update can break it). In the router, enable SSH
+(**Administration**, then **System**: LAN only, port 22, key login only). Then on the Pi:
+
+```
+sudo -u gnomehome ssh-keygen -t ed25519 -N "" -f /var/lib/gnomehome/router_ssh_key
+sudo cat /var/lib/gnomehome/router_ssh_key.pub       # paste into the router's Authorized Keys
+ssh-keyscan -t ed25519 <router_ip> | sudo tee /etc/gnomehome/router_known_hosts
+sudo install -o gnomehome -g gnomehome -m 0600 /var/lib/gnomehome/router_ssh_key /etc/gnomehome/router_ssh_key
+```
+
+Compare the key `ssh-keyscan` printed with the one the router shows, if it shows one: that file is what stops
+anyone else from impersonating the router later. Then `sudo systemctl start gnomehome-flows.service`, check
+`journalctl -u gnomehome-flows -n 20`, and enable `gnomehome-flows.timer`.
 
 ## Still to do on the Pi
 
@@ -125,4 +172,4 @@ systemctl list-timers 'gnomehome-*'
 - Pi-hole installed natively (no Docker on the Pi), per Phase 1
 
 Rust binaries for the Pi are cross-compiled on the Mac with `cross` (generic aarch64, never
-`target-cpu=native`) and copied over. They're never built on the Pi.
+`target-cpu=native`) and copied over (step 5b). They're never built on the Pi.
