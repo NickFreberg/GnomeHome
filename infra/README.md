@@ -9,6 +9,7 @@ small fixes on the first deploy. Run `what-if` first (below), which shows every 
 | Module | Resources | Plan link |
 | --- | --- | --- |
 | `monitoring.bicep` | Log Analytics workspace with a **0.1 GB daily cap**; an action group that pushes to the Azure mobile app and emails you | R-08, FR-16 |
+| `notifications.bicep` | A custom table, a data collection endpoint and rule that accept only the four notification kinds, and one log alert rule that pushes to your phone | FR-16 |
 | `budget.bicep` | A **$25 monthly budget** that alerts at 50%, 80%, and 100% of actual spend, and at 100% forecast | NFR-11 |
 | `keyvault.bicep` | Key Vault **Standard** (no Managed HSM) with purge protection, a rotating storage key, and an optional Databricks key | NFR-03, R-08 |
 | `storage.bicep` | ADLS Gen2 account (`raw` for the Pi's uploads, `lake` for Delta tables), encrypted with your key, accepting traffic only from your home IP and trusted Azure services; raw files go cool after 30 days and are deleted after 400 | NFR-03 |
@@ -71,6 +72,30 @@ sudo -u gnomehome env GNOMEHOME_CONFIG=/etc/gnomehome/gnomehome.toml /opt/gnomeh
 
 The last command is a dry run that lists what would be uploaded. The nightly timer runs it with `--send`.
 To revoke the token: `az storage container policy delete --account-name <account> --container-name raw --name gnomehome-upload`.
+
+## After deploying: push notifications to your iPhone
+
+The deployment creates a data collection endpoint and rule, and one alert rule that pushes to the Azure
+mobile app whenever the Pi queues a notification. The Pi needs an identity that can write to that one rule
+and nothing else:
+
+```
+az ad sp create-for-rbac --name gnomehome-pi-notify --role "Monitoring Metrics Publisher" \
+  --scopes <monitorDcrResourceId from the outputs>
+```
+
+It prints `appId`, `password`, and `tenant`. On the Pi, put the password in a file and the rest in the config:
+
+```
+sudo install -o root -g gnomehome -m 0640 /dev/stdin /etc/gnomehome/monitor_secret <<< '<password>'
+sudo nano /etc/gnomehome/gnomehome.toml
+#   [cloud] tenant_id = "<tenant>", monitor_client_id = "<appId>",
+#           monitor_endpoint = "<monitorEndpoint>", monitor_dcr_id = "<monitorDcrId>"
+```
+
+Install the Azure mobile app on the iPhone and sign in with `alertEmail`'s account. The push says only that
+GnomeHome needs attention and which kind (an approval, an action taken, a failure, the weekly assessment).
+The secret expires after a year by default; `az ad sp credential reset --id <appId>` makes a new one.
 
 ## After deploying: Databricks
 

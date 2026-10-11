@@ -46,6 +46,7 @@ from gnomehome.export import export_day, yesterday
 from gnomehome.feeds import UrllibClient
 from gnomehome.incidents import list_incidents, resolve_incident
 from gnomehome.ml.local import run_local
+from gnomehome.notify_relay import AzureMonitor, RelayError, load_secret, relay
 from gnomehome.protected import Guard, ProtectedAssets, ProtectedListError, ProtectedTargetError
 from gnomehome.report import ReportOptions, new_domain_counts
 from gnomehome.report import fetch as fetch_incidents
@@ -611,6 +612,32 @@ def cmd_quarantine(config: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_notify(config: Config, args: argparse.Namespace) -> int:
+    cloud, secret_file = config.cloud, config.paths.monitor_secret_file
+    azure = None
+    configured = (cloud.tenant_id, cloud.monitor_client_id, cloud.monitor_endpoint,
+                  cloud.monitor_dcr_id, secret_file)  # fmt: skip
+    if all(configured) and not args.dev:
+        try:
+            azure = AzureMonitor(cloud.tenant_id, cloud.monitor_client_id, load_secret(secret_file),
+                                 cloud.monitor_endpoint, cloud.monitor_dcr_id)  # fmt: skip
+        except RelayError as exc:
+            print(f"Push not sent: {exc}", file=sys.stderr)
+            return 1
+    conn = open_database(_db_path(config, args))
+    try:
+        result = relay(conn, notifier_from_config(config, log_only=args.dev), azure)
+    except RelayError as exc:
+        print(f"Push not sent, will retry: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        conn.close()
+    if result.sent:
+        where = "Azure and local" if result.azure else "local only"
+        print(f"Delivered {result.sent} notification(s) ({where}).")
+    return 0
+
+
 def cmd_self_assess(config: Config, args: argparse.Namespace) -> int:
     week_end = date.fromisoformat(args.week_end) if args.week_end else datetime.now(UTC).date()
     conn = open_database(_db_path(config, args))
@@ -947,6 +974,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     quarantine_cmd.add_argument("--dev", action="store_true", help="audit to the dev database")
     quarantine_cmd.set_defaults(handler=cmd_quarantine)
+
+    notify = sub.add_parser("notify", help="deliver queued notifications (fixed messages only)")
+    notify.add_argument("--dev", action="store_true", help="use the dev database, local only")
+    notify.set_defaults(handler=cmd_notify)
 
     assess = sub.add_parser("self-assess", help="weekly self-assessment: what changed (FR-17)")
     assess.add_argument("--week-end", help="last day of the week, YYYY-MM-DD (default: today)")

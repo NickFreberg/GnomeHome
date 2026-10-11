@@ -1,0 +1,11 @@
+# Rendered by `just render-units` from config/gnomehome.toml.
+[Unit]
+Description=Deliver GnomeHome notifications every minute
+
+[Timer]
+OnBootSec=4min
+OnUnitActiveSec=1min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

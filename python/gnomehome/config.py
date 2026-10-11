@@ -171,6 +171,8 @@ class PlatformConfig:
     nvd_api_key_file: Path | None = None
     #: A file holding the SAS token for the nightly upload (never in git). Optional.
     storage_sas_file: Path | None = None
+    #: The client secret for push notifications through Azure Monitor. Optional.
+    monitor_secret_file: Path | None = None
     #: Pi-hole's app password, for the playbook engine's domain blocks. Optional.
     pihole_password_file: Path | None = None
     #: The gnomehome command, which the Rust playbook engine runs for Python-only actions.
@@ -205,6 +207,11 @@ class CloudConfig:
 
     storage_account: str | None = None
     container: str = "raw"
+    #: Push notifications (FR-16) through Azure Monitor's Logs Ingestion API. All optional.
+    tenant_id: str | None = None
+    monitor_client_id: str | None = None
+    monitor_endpoint: str | None = None
+    monitor_dcr_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -388,6 +395,9 @@ def _parse_schedules(table: dict[str, Any]) -> SchedulesConfig:
 
 
 _STORAGE_ACCOUNT_RE = re.compile(r"^[a-z0-9]{3,24}$")
+_GUID_RE = re.compile(r"^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
+_HTTPS_RE = re.compile(r"^https://[A-Za-z0-9.-]+(:\d+)?(/[A-Za-z0-9._~/-]*)?$")
+_DCR_RE = re.compile(r"^dcr-[0-9a-f]{32}$")
 _CONTAINER_RE = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){2,62}$")
 
 
@@ -401,7 +411,22 @@ def _parse_cloud(table: dict[str, Any]) -> CloudConfig:
     container = _get(table, "container", str, d.container, where)
     if not _CONTAINER_RE.match(container):
         raise ConfigError(f"{where} container {container!r} is not a valid container name")
-    return CloudConfig(storage_account=account, container=container)
+
+    def text(key: str, pattern: re.Pattern[str], what: str) -> str | None:
+        value = _get(table, key, str, None, where) or None
+        if value is not None and not pattern.match(value):
+            raise ConfigError(f"{where} {key} must be {what}")
+        return value
+
+    endpoint = text("monitor_endpoint", _HTTPS_RE, "an https:// URL")
+    return CloudConfig(
+        storage_account=account,
+        container=container,
+        tenant_id=text("tenant_id", _GUID_RE, "a GUID"),
+        monitor_client_id=text("monitor_client_id", _GUID_RE, "a GUID"),
+        monitor_endpoint=endpoint,
+        monitor_dcr_id=text("monitor_dcr_id", _DCR_RE, "a data collection rule's immutable ID"),
+    )
 
 
 def _parse_response(table: dict[str, Any]) -> ResponseConfig:
@@ -581,6 +606,7 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
             "nvd_api_key_file",
             "storage_sas_file",
             "pihole_password_file",
+            "monitor_secret_file",
             "gnomehome_cli",
             "playbooks_dir",
             "ssh_path",
@@ -669,6 +695,7 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
         nvd_api_key_file=optional_path("nvd_api_key_file"),
         storage_sas_file=optional_path("storage_sas_file"),
         pihole_password_file=optional_path("pihole_password_file"),
+        monitor_secret_file=optional_path("monitor_secret_file"),
         gnomehome_cli=optional_path("gnomehome_cli"),
         playbooks_dir=optional_path("playbooks_dir"),
         ssh_path=optional_absolute("ssh_path"),

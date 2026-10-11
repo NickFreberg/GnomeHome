@@ -51,6 +51,16 @@ module monitoring 'modules/monitoring.bicep' = {
   }
 }
 
+module notifications 'modules/notifications.bicep' = {
+  name: 'notifications'
+  params: {
+    location: location
+    namePrefix: namePrefix
+    workspaceId: monitoring.outputs.workspaceId
+    actionGroupId: monitoring.outputs.actionGroupId
+  }
+}
+
 module budget 'modules/budget.bicep' = {
   name: 'budget'
   params: {
@@ -117,3 +127,6 @@ output storageDfsEndpoint string = storage.outputs.dfsEndpoint
 output databricksUrl string = 'https://${databricks.outputs.workspaceUrl}'
 output databricksAccessConnectorId string = databricks.outputs.accessConnectorId
 output openAiEndpoint string = checkin.outputs.openAiEndpoint
+output monitorEndpoint string = notifications.outputs.ingestionEndpoint
+output monitorDcrId string = notifications.outputs.ruleImmutableId
+output monitorDcrResourceId string = notifications.outputs.ruleId

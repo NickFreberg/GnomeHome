@@ -1,0 +1,19 @@
+# Rendered by `just render-units` from config/gnomehome.toml. Edit the config, not this file.
+[Unit]
+Description=GnomeHome notification relay (fixed messages only, to the journal and Azure Monitor)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${user}
+Group=${user}
+Environment=GNOMEHOME_CONFIG=${config_file}
+ExecStart=${install_dir}/.venv/bin/gnomehome notify
+TimeoutStartSec=2min
+# Talks to Entra ID and Azure Monitor over HTTPS when [cloud] is set up; no capabilities.
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=${writable}
+ReadOnlyPaths=${readonly}
+${hardening}

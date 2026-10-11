@@ -30,6 +30,7 @@ def test_every_template_renders_with_no_placeholders_left(files):
         "gnomehome-export.service", "gnomehome-export.timer",
         "gnomehome-playbook.service", "gnomehome-playbook.timer",
         "gnomehome-assessment.service", "gnomehome-assessment.timer",
+        "gnomehome-notify.service", "gnomehome-notify.timer",
         "tmpfiles-gnomehome.conf", "rsyslog-gnomehome.conf", "logrotate-gnomehome",
     }  # fmt: skip
     for name, content in files.items():
@@ -52,7 +53,7 @@ def test_raw_socket_rights_only_for_the_nmap_jobs(files):
         assert "AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN" in unit
         assert "SuccessExitStatus=75" in unit
     for job in ("syslog", "analyze", "flows", "dnstail", "enrich", "export", "playbook",
-                "assessment"):  # fmt: skip
+                "assessment", "notify"):  # fmt: skip
         unit = files[f"gnomehome-{job}.service"]
         assert "AmbientCapabilities" not in unit, job
         assert "CapabilityBoundingSet=\n" in unit, job

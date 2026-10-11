@@ -115,6 +115,10 @@ deny run *args:
 playbooks-check:
     cargo run --quiet --package gnomehome-playbook -- validate playbooks
 
+# Deliver queued notifications: fixed messages only, to the log or banner and Azure if set up (--dev)
+notify *args:
+    {{gnomehome}} notify {{args}}
+
 # Weekly self-assessment: new devices, newly exposed ports, new CVEs (--week-end, --dev)
 self-assess *args:
     {{gnomehome}} self-assess {{args}}
