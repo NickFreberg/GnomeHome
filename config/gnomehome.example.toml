@@ -46,6 +46,7 @@ discovery_every_minutes = 10       # quick host discovery: new-device alert unde
 service_scan_every_minutes = 240   # full service scan every 4 hours
 syslog_every_minutes = 1           # read new router syslog lines (DHCP: new devices in ~1-2 min)
 analyze_every_minutes = 60         # DNS analytics: beaconing, DGA bursts, threat intel matches
+flows_every_minutes = 1            # read the router's connection table over SSH (Pi)
 enrich_daily_at = "03:30"          # CVE/EPSS/KEV refresh (Phase 3)
 upload_nightly_at = "02:00"        # ship data to Azure (Phase 6)
 retention_daily_at = "04:00"       # delete data older than [retention]
@@ -150,3 +151,10 @@ install_dir = "/opt/gnomehome"                 # where the repo is checked out o
 service_user = "gnomehome"                     # unprivileged user the jobs run as
 config_file = "/etc/gnomehome/gnomehome.toml"  # this file's location on the Pi
 nvd_api_key_file = "/etc/gnomehome/nvd_api_key"   # optional, root:gnomehome 0640
+# Router SSH for the connection-table pull (enable SSH, LAN only, key login, in the
+# router: Administration > System). The key must be owned by the service user, mode 0600.
+ssh_path = "/usr/bin/ssh"
+router_ssh_user = "admin"                      # your router admin user name
+router_ssh_port = 22
+router_ssh_key = "/etc/gnomehome/router_ssh_key"
+router_known_hosts = "/etc/gnomehome/router_known_hosts"   # pins the router's host key

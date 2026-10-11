@@ -31,6 +31,7 @@ from gnomehome.collectors.nmap_discovery import (
     ScanResult,
     run_scan,
 )
+from gnomehome.collectors.router_flows import FlowPullError, fetcher_from_config, pull_flows
 from gnomehome.collectors.router_syslog import ACTOR as SYSLOG_ACTOR
 from gnomehome.collectors.router_syslog import describe, ingest_router_syslog, send_alerts
 from gnomehome.config import Config, ConfigError, load_config, platform_mismatch
@@ -45,6 +46,7 @@ from gnomehome.protected import Guard, ProtectedAssets, ProtectedListError
 from gnomehome.risk import run_scoring
 from gnomehome.synthetic.generate import generate
 from gnomehome.synthetic.load import load_synthetic
+from gnomehome.timeutil import utc_now
 
 log = logging.getLogger("gnomehome")
 
@@ -477,6 +479,34 @@ def cmd_new_domains(config: Config, args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------
 
 
+def cmd_flows(config: Config, _args: argparse.Namespace) -> int:
+    try:
+        fetch = fetcher_from_config(config)
+        assets = ProtectedAssets.load(config.paths.protected_assets)
+    except (FlowPullError, ProtectedListError) as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 1
+    conn = open_database(config.paths.db_path)
+    audit = AuditLog(conn)
+    scrub_protected(conn, assets, audit=audit, actor="system:flows")
+    try:
+        result = pull_flows(
+            conn, Guard(assets, audit=audit, actor="system:flows"), fetch,
+            seen_at=utc_now(), lan_cidrs=config.network.lan_cidrs,
+        )  # fmt: skip
+    except FlowPullError as exc:
+        print(f"Router connection table not read: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        conn.close()
+    print(
+        f"Router connections: {result.entries} in the table, {result.opened} new, "
+        f"{result.closed} closed and stored, {result.dropped_protected} dropped by the "
+        "protected-asset guard."
+    )
+    return 0
+
+
 def cmd_syslog(config: Config, _args: argparse.Namespace) -> int:
     path = config.paths.router_syslog_path
     if path is None:
@@ -690,6 +720,9 @@ def build_parser() -> argparse.ArgumentParser:
     risks.add_argument("--top", type=int, default=10)
     risks.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
     risks.set_defaults(handler=cmd_risks)
+
+    flows = sub.add_parser("flows", help="read the router's connection table over SSH")
+    flows.set_defaults(handler=cmd_flows)
 
     syslog = sub.add_parser("syslog", help="read new router syslog lines (DHCP, firewall, ...)")
     syslog.set_defaults(handler=cmd_syslog)

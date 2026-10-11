@@ -78,6 +78,10 @@ analyze *args:
 intel *args:
     {{gnomehome}} intel {{args}}
 
+# Read the router's connection table over SSH into flow events (Pi)
+flows:
+    {{gnomehome}} flows
+
 # Domains each device looked up for the first time (--hours N, --dev)
 new-domains *args:
     {{gnomehome}} new-domains {{args}}

@@ -72,6 +72,7 @@ class SchedulesConfig:
     service_scan_every_minutes: int = 240
     syslog_every_minutes: int = 1
     analyze_every_minutes: int = 60
+    flows_every_minutes: int = 1
     enrich_daily_at: str = "03:30"
     upload_nightly_at: str = "02:00"
     retention_daily_at: str = "04:00"
@@ -160,6 +161,12 @@ class PlatformConfig:
     #: A file holding the free NVD API key (never in git). Optional: without it,
     #: lookups are slower (NVD allows 5 requests per 30 seconds).
     nvd_api_key_file: Path | None = None
+    # Router SSH, for the connection-table pull (FR-08). All optional.
+    ssh_path: Path | None = None
+    router_ssh_user: str | None = None
+    router_ssh_port: int = 22
+    router_ssh_key: Path | None = None
+    router_known_hosts: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -316,6 +323,7 @@ def _parse_schedules(table: dict[str, Any]) -> SchedulesConfig:
         "service_scan_every_minutes",
         "syslog_every_minutes",
         "analyze_every_minutes",
+        "flows_every_minutes",
     ):
         values[key] = _int_range(table, key, getattr(d, key), 1, 7 * 24 * 60, where)
     for key in ("enrich_daily_at", "upload_nightly_at", "retention_daily_at"):
@@ -469,6 +477,11 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
             "service_user",
             "config_file",
             "nvd_api_key_file",
+            "ssh_path",
+            "router_ssh_user",
+            "router_ssh_port",
+            "router_ssh_key",
+            "router_known_hosts",
         },
         where,
     )
@@ -544,6 +557,11 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
         service_user=service_user,
         config_file=optional_absolute("config_file"),
         nvd_api_key_file=optional_path("nvd_api_key_file"),
+        ssh_path=optional_absolute("ssh_path"),
+        router_ssh_user=_ssh_user(table, where),
+        router_ssh_port=_int_range(table, "router_ssh_port", 22, 1, 65535, where),
+        router_ssh_key=optional_path("router_ssh_key"),
+        router_known_hosts=optional_path("router_known_hosts"),
     )
 
 
@@ -625,6 +643,13 @@ def _absolute_str(value: str, label: str) -> Path:
     if not path.is_absolute():
         raise ConfigError(f"{label} must be an absolute path (got {value!r})")
     return path
+
+
+def _ssh_user(table: dict[str, Any], where: str) -> str | None:
+    user = _get(table, "router_ssh_user", str, None, where)
+    if user is not None and not re.match(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,31}$", user):
+        raise ConfigError(f"{where} router_ssh_user {user!r} is not a valid user name")
+    return user
 
 
 def platform_mismatch(config: Config) -> str | None:
