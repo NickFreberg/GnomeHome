@@ -15,8 +15,9 @@ a portfolio piece, so code, docs, and commits should read well to a reviewer.
 
 1. **Protected assets (R-12, the only "Avoid" risk).** The work laptop, and any future work device, must never be
    probed, captured, spoofed, quarantined, or have data stored about it.
-   - Every collector and responder calls the shared guard in `python/gnomehome/protected.py`. Don't add a second
-     check somewhere else; extend the guard. `python/tests/test_architecture.py` fails if a module in
+   - Every collector and responder calls the shared guard: `python/gnomehome/protected.py` in Python,
+     `crates/gnomehome-core/src/protected.rs` in Rust. Don't add a second check somewhere else; extend the guard
+     (both languages, plus a case in `testdata/guard_vectors.yaml`). `python/tests/test_architecture.py` fails if a module in
      `collectors/` or `responders/` doesn't import it.
    - Active actions call `guard.require_allowed(...)`, which raises and audits refusals. Passive collectors drop records
      with `guard.is_protected(...)` / `guard.filter(...)` **before** storage. Flows match on source or destination.
@@ -80,6 +81,12 @@ a portfolio piece, so code, docs, and commits should read well to a reviewer.
   behind an `HttpClient` interface; tests use `python/tests/fixtures/feeds/`), `enrich.py` (stores CVE rules,
   matches locally), `risk.py` (model risk-v1, documented in `docs/risk-model.md`). Change the formula, bump
   `MODEL_VERSION`, and update the doc together.
+- DNS analytics: `analytics/detect.py` (beaconing, DGA, threat intel, DNS bypass), `analytics/run.py`
+  (checkpoints in `analysis_checkpoint`, findings to incidents), `analytics/intel.py` (feeds). Router flows:
+  `conntrack.py` parser, `collectors/router_flows.py` (one fixed SSH command, pinned host key).
+- Rust: `crates/gnomehome-core` (guard, audit, DB settings, config subset, timestamps; tests apply the real
+  migrations via the `testkit` feature), `crates/gnomehome-dnstail` (Pi-hole log tailer: `parse.rs`,
+  `pair.rs`, `lib.rs`). Rust reads `MIN_SCHEMA_VERSION` only; Python still owns migrations.
 - Tests drive the nmap job with a fake runner and fixture XML. The only real-nmap test targets `127.0.0.1`.
 - Jobs that run from timers print protected devices by label only: the journal is stored on disk.
 - Runbook before any real scan: `docs/runbooks/zero-packet-test.md`.

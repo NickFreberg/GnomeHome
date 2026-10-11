@@ -6,9 +6,9 @@ SOC (inventory, risk scoring, detection, and response) on a $35 computer.
 
 The full project plan, which is the source of truth, is in [`docs/PLAN.md`](docs/PLAN.md).
 
-> **Status:** Phases 1 to 3 (the minimum complete project: inventory, alerts, vulnerability risk
-> scoring), developed on an M1 MacBook before the Pi arrives. The Pi's system files are written but
-> not yet run on hardware.
+> **Status:** Phases 1 to 4: inventory, alerts, and vulnerability risk scoring (the minimum complete
+> project), plus DNS and connection behavior monitoring. Developed on an M1 MacBook before the Pi
+> arrives. The Pi's system files are written but not yet run on hardware.
 
 ## What's here so far
 
@@ -29,11 +29,20 @@ The full project plan, which is the source of truth, is in [`docs/PLAN.md`](docs
 - **Risk scoring**: CVEs from NVD re-checked against each software version, EPSS exploitation odds,
   and CISA's known-exploited list, combined into a daily 0–100 score per device. Every point is
   explained in plain words ([risk model](docs/risk-model.md)).
-- **Pi deployment files**: systemd timers, rsyslog, logrotate, and tmpfiles, rendered from the config
+- **DNS log tailer** (Rust, `crates/gnomehome-dnstail`): follows Pi-hole's log all the time and stores every
+  query with its outcome, using a Rust port of the guard (`crates/gnomehome-core`) that passes the same
+  shared test vectors as the Python one.
+- **Behavior detection**: beaconing (steady check-ins that start after the baseline), bursts of
+  machine-generated domain names, lookups of domains on free threat-intel lists, and devices that skip
+  Pi-hole for DNS. Each finding becomes a plain-English incident with its MITRE ATT&CK technique.
+- **Router connection data**: the router's connection table, read over SSH with a pinned host key and one
+  fixed read-only command, becomes per-connection flow events.
+- **Pi deployment files**: systemd timers and services, rsyslog, logrotate, and tmpfiles, rendered from the config
   (`just render-units`, see [`deploy/pi/README.md`](deploy/pi/README.md)).
 - **Synthetic data**: a fake household's Pi-hole DNS log and router connection-table snapshots, with
   labeled attack scenarios, for building detections without real traffic.
-- **Rust workspace**: Axum API stub (loopback only) and playbook-engine stub.
+- **Rust workspace**: the shared core (guard, audit log, database), the DNS tailer, an Axum API stub
+  (loopback only), and a playbook-engine stub.
 
 ## Quick start on the Mac
 
@@ -68,7 +77,7 @@ as untracked. It holds no secrets, so commit it if you want it versioned, or lea
 
 ```
 just setup             # installs Python deps into .venv, creates your config files from the examples
-just test              # every test should pass (about 300 Python tests plus Rust)
+just test              # every test should pass (about 375 Python tests plus Rust)
 ```
 
 Then edit two files, which git ignores:
@@ -105,6 +114,11 @@ It captures packets during a scan and proves nothing reaches the work laptop.
 | `just enrich` | Fetch CVEs (NVD), EPSS, and KEV, and match them to scanned software |
 | `just score` | Compute today's risk score for every device |
 | `just risks` | The riskiest devices and the reasons behind each score |
+| `just intel` | Refresh the threat-intel domain lists |
+| `just analyze` | DNS analytics: beaconing, DGA bursts, threat-intel hits, DNS bypass (`--dev`) |
+| `just new-domains` | Domains each device looked up for the first time (`--hours`, `--dev`) |
+| `just flows` | Read the router's connection table over SSH (on the Pi, once router SSH is set up) |
+| `just dnstail` | Follow Pi-hole's log into the database (`--once`, `--dev`, `--log`, `--clock utc`) |
 | `just incidents` | List open incidents: new devices, protected-device drift (`--all`, `--dev`) |
 | `just incident-resolve <id>` | Mark an incident resolved |
 | `just synth` | Generate synthetic DNS logs, router flows, and router syslog (`--seed`, `--days`) |
@@ -115,6 +129,7 @@ It captures packets during a scan and proves nothing reaches the work laptop.
 | `just test` | All Python and Rust tests |
 | `just lint` / `just fmt` | Lint checks / auto-format |
 | `just build` | Build Rust and run `cargo audit` |
+| `just build-pi` | Cross-compile the Rust services for the Pi (needs `cross` and Docker) |
 | `just render-units` | Render the Pi's systemd, rsyslog, logrotate, and tmpfiles files from the config |
 | `just serve` | Run the API stub on `127.0.0.1:8787` (try `curl 127.0.0.1:8787/healthz`) |
 
@@ -133,7 +148,9 @@ layer below works on its own:
 
 Passive collectors follow the same list. The router syslog job records only that the laptop exists,
 drops any line that mentions it, and opens a label-only "drift" incident if the laptop's MAC shows up at an
-unlisted IP, or an unknown MAC takes its reserved IP.
+unlisted IP, or an unknown MAC takes its reserved IP. The DNS tailer drops the laptop's queries, reverse
+lookups of its address, and names that embed its address or MAC. The router flow pull drops any connection
+with the laptop at either end, including through a port forward.
 
 The audit log names protected devices by label only, never by MAC or IP. A test scans every committed file
 for real-looking IPs and MACs.
@@ -144,10 +161,10 @@ for real-looking IPs and MACs.
 | --- | --- |
 | `python/gnomehome/` | Python jobs: config, guard, database, audit log, nmap job, synthetic data |
 | `python/tests/` | Python tests (`just test-py`) |
-| `crates/` | Rust workspace: `gnomehome-api` (Axum) and `gnomehome-playbook` |
+| `crates/` | Rust workspace: `gnomehome-core` (guard, audit, DB), `gnomehome-dnstail`, `gnomehome-api` (Axum), `gnomehome-playbook` |
 | `config/` | `*.example.*` files with fake values; your real copies are gitignored |
 | `testdata/` | Contract vectors shared by Python and Rust (guard cases, audit hashes) |
 | `deploy/pi/` | Linux-only pieces for the Pi (systemd, capabilities, LUKS, firewall) |
-| `docs/` | Plan, audit log spec, runbooks |
+| `docs/` | Plan, decisions, audit log spec, risk model, runbooks |
 | `data/` | Databases, scan output, synthetic data (gitignored) |
 | `pihole/` | Your local Pi-hole Docker setup (not tracked) |
