@@ -14,14 +14,25 @@ default:
 
 # ---------------------------------------------------------------- setup ----
 
-# Install Python deps into .venv and copy the example config (never overwrites)
+# Install Python deps into .venv and copy the example configs (never overwrites)
 setup:
     uv sync
     @if [ ! -f config/gnomehome.toml ]; then cp config/gnomehome.example.toml config/gnomehome.toml && echo "Created config/gnomehome.toml from the example. Edit scan_targets, lan_cidrs, and interface for your network."; else echo "config/gnomehome.toml already exists, left alone."; fi
+    @if [ ! -f config/protected_assets.yaml ]; then cp config/protected_assets.example.yaml config/protected_assets.yaml && echo "Created config/protected_assets.yaml from the example. Swap in your work laptop's real MACs and reserved IP before any scan."; else echo "config/protected_assets.yaml already exists, left alone."; fi
 
 # Show the resolved config and check that required tools are installed
 doctor:
     {{gnomehome}} doctor
+
+# ------------------------------------------------------- protected assets --
+
+# Validate config/protected_assets.yaml (prints labels and counts, never values)
+protected-check:
+    {{gnomehome}} protected-check
+
+# Print the tcpdump capture filter for the zero-packet test
+protected-filter:
+    {{gnomehome}} protected-filter
 
 # ---------------------------------------------------------------- quality --
 

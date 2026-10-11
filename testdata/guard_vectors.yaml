@@ -1,0 +1,44 @@
+# Protected-asset guard contract vectors.
+#
+# The Python guard (python/gnomehome/protected.py) passes every case today.
+# The Rust port (playbook engine and DNS tailer, later phases) must pass the
+# same cases. "protected: true" means the guard must refuse an active action
+# and drop the record in a passive collector.
+#
+# All values are fake (documentation ranges).
+
+protected_list: |
+  version: 1
+  protected:
+    - label: "Work laptop"
+      reason: "Employer-managed device."
+      macs:
+        - "00:00:5e:00:53:01"
+        - "00-00-5E-00-53-02"
+      ips:
+        - "192.0.2.10"
+        - "192.0.2.64/30"
+
+cases:
+  - { name: "exact MAC",                          mac: "00:00:5e:00:53:01", protected: true }
+  - { name: "uppercase with dashes (ipconfig)",   mac: "00-00-5E-00-53-01", protected: true }
+  - { name: "Cisco dotted",                       mac: "0000.5e00.5301",    protected: true }
+  - { name: "bare hex",                           mac: "00005E005301",      protected: true }
+  - { name: "macOS arp drops leading zeros",      mac: "0:0:5e:0:53:1",     protected: true }
+  - { name: "second MAC (dock) listed as dashes", mac: "00:00:5e:00:53:02", protected: true }
+  - { name: "surrounding whitespace",             mac: " 00:00:5e:00:53:01 ", protected: true }
+  - { name: "unrelated MAC",                      mac: "00:00:5e:00:53:99", protected: false }
+  - { name: "exact IP",                           ip: "192.0.2.10",         protected: true }
+  - { name: "IP inside protected CIDR",           ip: "192.0.2.66",         protected: true }
+  - { name: "first address after the CIDR",       ip: "192.0.2.68",         protected: false }
+  - { name: "IPv4-mapped IPv6",                   ip: "::ffff:192.0.2.10",  protected: true }
+  - { name: "unrelated IP",                       ip: "192.0.2.11",         protected: false }
+  - { name: "protected MAC at an unlisted IP",    mac: "00:00:5e:00:53:01", ip: "192.0.2.200", protected: true }
+  - { name: "unknown MAC at the protected IP",    mac: "00:00:5e:00:53:99", ip: "192.0.2.10",  protected: true }
+  - { name: "unknown MAC and unknown IP",         mac: "00:00:5e:00:53:99", ip: "192.0.2.200", protected: false }
+  - { name: "garbage MAC fails closed",           mac: "not-a-mac",         protected: true }
+  - { name: "mixed separators fail closed",       mac: "00:00-5e:00:53:01", protected: true }
+  - { name: "out-of-range IP fails closed",       ip: "192.0.2.999",        protected: true }
+  - { name: "leading zeros fail closed",          ip: "192.000.002.010",    protected: true }
+  - { name: "empty IP fails closed",              ip: "",                   protected: true }
+  - { name: "CIDR given as a target fails closed", ip: "192.0.2.0/24",      protected: true }

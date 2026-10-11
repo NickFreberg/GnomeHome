@@ -1,0 +1,31 @@
+# GnomeHome protected-asset list (the "do-not-touch" list)
+# =========================================================
+#
+# GnomeHome must NEVER probe, capture, spoof, quarantine, or store data about
+# the devices listed here. That covers your work laptop and any future work
+# device. Scanning a corporate laptop can trip its endpoint security and alert
+# your employer.
+#
+# `just setup` copies this file to config/protected_assets.yaml, which is
+# gitignored. Edit THAT copy and replace every fake value below. The real scan
+# refuses to run while any example value is still present.
+#
+# Where to find the real values (see docs/PLAN.md, "Protected assets"):
+#   macs: On the work laptop, run `ipconfig /all`. Copy the "Physical Address"
+#         of the Wi-Fi adapter AND any dock or Ethernet adapter. The
+#         AA-BB-CC-DD-EE-FF format it prints is fine to paste as-is.
+#   ips:  The IP you reserved for the laptop in the router (LAN, then DHCP
+#         Server, then manual assignment). Required: nmap can only exclude by
+#         IP. A CIDR like "192.0.2.64/30" protects a small range.
+#
+# Always keep values in quotes.
+
+version: 1
+protected:
+  - label: "Work laptop"
+    reason: "Employer-managed device. Never probe, capture, spoof, quarantine, or store data."
+    macs:
+      - "00:00:5e:00:53:01"   # Wi-Fi adapter (FAKE: documentation range)
+      - "00:00:5e:00:53:02"   # Dock / Ethernet adapter (FAKE)
+    ips:
+      - "192.0.2.10"          # Reserved IP in the router (FAKE: TEST-NET-1)

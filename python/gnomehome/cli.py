@@ -15,6 +15,7 @@ from collections.abc import Callable
 
 from gnomehome import __version__
 from gnomehome.config import Config, ConfigError, load_config, platform_mismatch
+from gnomehome.protected import ProtectedAssets, ProtectedListError
 
 log = logging.getLogger("gnomehome")
 
@@ -37,6 +38,16 @@ def _interface_exists(name: str) -> bool:
         return False
 
 
+def _protected_status(config: Config) -> str:
+    try:
+        assets = ProtectedAssets.load(config.paths.protected_assets)
+    except ProtectedListError as exc:
+        return "MISSING" if "not found" in str(exc) else "INVALID (run `just protected-check`)"
+    if assets.uses_example_values():
+        return "EXAMPLE VALUES (fill in your real ones before scanning)"
+    return f"OK ({len(assets.entries)} protected device(s))"
+
+
 def cmd_doctor(config: Config, _args: argparse.Namespace) -> int:
     p = config.paths
     print("GnomeHome doctor")
@@ -47,11 +58,7 @@ def cmd_doctor(config: Config, _args: argparse.Namespace) -> int:
         _status("", mismatch, "WARN")
     _status("data dir", p.data_dir)
     _status("database", p.db_path, "OK" if p.db_path.exists() else "not created yet")
-    _status(
-        "protected list",
-        p.protected_assets,
-        "OK" if p.protected_assets.exists() else "MISSING (run `just setup`, then fill it in)",
-    )
+    _status("protected list", p.protected_assets, _protected_status(config))
     _status("interface", p.interface, "OK" if _interface_exists(p.interface) else "NOT FOUND")
     _status("scan targets", ", ".join(config.network.scan_targets))
 
@@ -76,6 +83,42 @@ def cmd_doctor(config: Config, _args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# protected list
+# --------------------------------------------------------------------------
+
+
+def cmd_protected_check(config: Config, _args: argparse.Namespace) -> int:
+    """Validate the list and summarize it without printing any identifiers."""
+    try:
+        assets = ProtectedAssets.load(config.paths.protected_assets)
+    except ProtectedListError as exc:
+        print(f"INVALID: {exc}", file=sys.stderr)
+        return 1
+    print(f"Protected-asset list OK: {assets.source}")
+    for entry in assets.entries:
+        print(f"  - {entry.label}: {len(entry.macs)} MAC(s), {len(entry.networks)} IP/CIDR(s)")
+    if assets.uses_example_values():
+        print(
+            "WARNING: the list still contains example values (documentation ranges). "
+            "Real scans are refused until you replace them.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+def cmd_protected_filter(config: Config, _args: argparse.Namespace) -> int:
+    """Print the tcpdump filter for the zero-packet test (prints protected identifiers)."""
+    try:
+        assets = ProtectedAssets.load(config.paths.protected_assets)
+    except ProtectedListError as exc:
+        print(f"INVALID: {exc}", file=sys.stderr)
+        return 1
+    print(assets.tcpdump_filter())
+    return 0
+
+
+# --------------------------------------------------------------------------
 # Wiring
 # --------------------------------------------------------------------------
 
@@ -93,6 +136,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = sub.add_parser("doctor", help="show resolved config and check required tools")
     doctor.set_defaults(handler=cmd_doctor)
+
+    check = sub.add_parser("protected-check", help="validate the protected-asset list")
+    check.set_defaults(handler=cmd_protected_check)
+    tcpdump = sub.add_parser(
+        "protected-filter", help="print the tcpdump filter for the zero-packet test"
+    )
+    tcpdump.set_defaults(handler=cmd_protected_filter)
     return parser
 
 

@@ -36,3 +36,30 @@ def test_no_hardcoded_os_paths_in_code():
             ):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}: {node.value!r}")
     assert not offenders, "Move these paths into config/gnomehome.toml:\n" + "\n".join(offenders)
+
+
+# Folders whose modules collect data or take action. Each module must import
+# the shared guard (python/gnomehome/protected.py). Add new folders here.
+GUARDED_PACKAGES = ("collectors", "responders")
+
+
+def _imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(), filename=str(path))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module)
+    return names
+
+
+def test_every_collector_and_responder_imports_the_guard():
+    missing = []
+    for package in GUARDED_PACKAGES:
+        for path in sorted((PACKAGE / package).glob("*.py")):
+            if path.name == "__init__.py":
+                continue
+            if "gnomehome.protected" not in _imports(path):
+                missing.append(str(path.relative_to(REPO_ROOT)))
+    assert not missing, "These modules must import gnomehome.protected:\n" + "\n".join(missing)

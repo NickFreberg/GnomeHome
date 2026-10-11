@@ -407,7 +407,7 @@ def _int_range(
 def _cidr_list(table: dict[str, Any], key: str, where: str) -> tuple[str, ...]:
     value = table.get(key)
     if not isinstance(value, list) or not value:
-        raise ConfigError(f'{where} {key} must be a non-empty list like ["192.168.1.0/24"]')
+        raise ConfigError(f"{where} {key} must be a non-empty list of CIDRs (your LAN subnet)")
     out = []
     for item in value:
         if not isinstance(item, str):
