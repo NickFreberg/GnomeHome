@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from gnomehome import __version__
+from gnomehome.audit import verify as verify_audit
 from gnomehome.config import Config, ConfigError, load_config, platform_mismatch
 from gnomehome.db import open_database
 from gnomehome.db.migrate import MigrationError, current_version
@@ -176,6 +177,25 @@ def cmd_db_status(config: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_audit_verify(config: Config, args: argparse.Namespace) -> int:
+    path = _db_path(config, args)
+    if not path.exists():
+        print(f"{path}: not created yet (run `just migrate`)")
+        return 1
+    conn = open_database(path)
+    result = verify_audit(conn)
+    conn.close()
+    if result.ok:
+        print(
+            f"Audit log OK: {result.rows} entr{'y' if result.rows == 1 else 'ies'}, chain intact."
+        )
+        return 0
+    print(f"Audit log BROKEN ({result.rows} entries checked):", file=sys.stderr)
+    for problem in result.problems:
+        print(f"  {problem}", file=sys.stderr)
+    return 1
+
+
 # --------------------------------------------------------------------------
 # Wiring
 # --------------------------------------------------------------------------
@@ -208,6 +228,9 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("db-status", help="show schema version and row counts")
     status.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
     status.set_defaults(handler=cmd_db_status)
+    audit = sub.add_parser("audit-verify", help="recompute and check the audit log hash chain")
+    audit.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
+    audit.set_defaults(handler=cmd_audit_verify)
     return parser
 
 

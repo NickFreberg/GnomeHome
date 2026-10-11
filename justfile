@@ -44,6 +44,10 @@ migrate:
 db-status:
     {{gnomehome}} db-status
 
+# Recompute the audit log's hash chain and report any tampering
+audit-verify:
+    {{gnomehome}} audit-verify
+
 # ---------------------------------------------------------------- quality --
 
 # Run every test: Python and Rust

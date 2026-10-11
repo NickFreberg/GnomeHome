@@ -50,3 +50,9 @@ def test_migrate_then_db_status(config_path, capsys):
     out = capsys.readouterr().out
     assert "journal mode     wal" in out
     assert "audit_log" in out
+
+
+def test_audit_verify_on_fresh_database(config_path, capsys):
+    cli.main(["--config", str(config_path), "migrate"])
+    assert cli.main(["--config", str(config_path), "audit-verify"]) == 0
+    assert "chain intact" in capsys.readouterr().out
