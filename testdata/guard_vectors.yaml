@@ -42,3 +42,16 @@ cases:
   - { name: "leading zeros fail closed",          ip: "192.000.002.010",    protected: true }
   - { name: "empty IP fails closed",              ip: "",                   protected: true }
   - { name: "CIDR given as a target fails closed", ip: "192.0.2.0/24",      protected: true }
+
+# Free-text cases (syslog lines, hostnames): does the text mention a protected device?
+# Used by passive collectors that store text, such as the router syslog job.
+text_cases:
+  - { name: "firewall line from the protected IP",       text: "kernel: DROP IN=br0 OUT=eth0 SRC=192.0.2.10 DST=203.0.113.77 PROTO=TCP", protected: true }
+  - { name: "iptables MAC field (dst+src+type)",          text: "kernel: DROP IN=br0 MAC=ff:ff:ff:ff:ff:ff:00:00:5e:00:53:01:08:00 SRC=198.51.100.9", protected: true }
+  - { name: "IP inside protected CIDR",                   text: "dnsmasq-dhcp[1]: DHCPACK(br0) 192.0.2.66 00:00:5e:00:53:44 tv", protected: true }
+  - { name: "dashed uppercase MAC",                       text: "device 00-00-5E-00-53-02 joined", protected: true }
+  - { name: "unrelated IP",                               text: "httpd: login from 192.0.2.11", protected: false }
+  - { name: "no identifiers",                             text: "ntp: start NTP update", protected: false }
+  - { name: "firmware version is not an IP",              text: "firmware 3.0.0.4.388 build", protected: false }
+  - { name: "malformed address can't be anyone's",        text: "bad address 192.0.2.999", protected: false }
+  - { name: "empty text",                                 text: "", protected: false }

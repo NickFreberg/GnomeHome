@@ -198,3 +198,8 @@ def test_unquoted_all_digit_mac_stays_a_string():
 def test_invalid_lists_are_refused(text: str, message: str):
     with pytest.raises(ProtectedListError, match=message):
         ProtectedAssets.parse(text)
+
+
+@pytest.mark.parametrize("case", VECTORS["text_cases"], ids=lambda c: c["name"])
+def test_text_vectors(case):
+    assert Guard(ASSETS).text_mentions_protected(case["text"]) is case["protected"]

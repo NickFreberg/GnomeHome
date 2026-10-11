@@ -63,6 +63,11 @@ DOCUMENTATION_NETWORKS = tuple(
 )
 
 _LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$")
+# Identifier-shaped tokens inside free text (see Guard.text_mentions_protected).
+_TEXT_IPV4 = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
+_TEXT_OCTET_RUN = re.compile(
+    r"(?<![0-9A-Fa-f:-])[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5,}(?![0-9A-Fa-f:-])"
+)
 
 T = TypeVar("T")
 
@@ -351,6 +356,30 @@ class Guard:
         if any(ip is not None and self.is_protected(ip=ip) for ip in ips):
             return True
         return any(mac is not None and self.is_protected(mac=mac) for mac in macs)
+
+    def text_mentions_protected(self, text: str | None) -> bool:
+        """True if free text (a syslog line, a hostname) contains a protected IP or MAC.
+
+        Finds every IPv4 address and every run of MAC-style octets. Long runs, like the
+        14-octet iptables ``MAC=dst:src:type`` field, are checked as a sliding window of
+        6 octets. Only well-formed tokens count: ``192.0.2.999`` or a firmware version
+        can't be anyone's address, so they don't make a line "protected".
+        """
+        if not text:
+            return False
+        for token in _TEXT_IPV4.findall(text):
+            try:
+                normalize_ip(token)
+            except InvalidIdentifier:
+                continue
+            if self.assets.match(ip=token) is not None:
+                return True
+        for run in _TEXT_OCTET_RUN.findall(text):
+            octets = re.split(r"[:-]", run)
+            for start in range(len(octets) - 5):
+                if self.assets.match(mac=":".join(octets[start : start + 6])) is not None:
+                    return True
+        return False
 
     def filter(
         self,
