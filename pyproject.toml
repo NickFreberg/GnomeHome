@@ -47,4 +47,4 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"python/tests/**" = ["S101", "S108"]
+"python/tests/**" = ["S101", "S108", "S608"]  # asserts, tmp paths, SQL built from test constants

@@ -34,6 +34,16 @@ protected-check:
 protected-filter:
     {{gnomehome}} protected-filter
 
+# -------------------------------------------------------------- database --
+
+# Create the SQLite database or apply pending migrations
+migrate:
+    {{gnomehome}} migrate
+
+# Show schema version and row counts
+db-status:
+    {{gnomehome}} db-status
+
 # ---------------------------------------------------------------- quality --
 
 # Run every test: Python and Rust

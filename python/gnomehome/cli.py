@@ -12,9 +12,12 @@ import socket
 import subprocess
 import sys
 from collections.abc import Callable
+from pathlib import Path
 
 from gnomehome import __version__
 from gnomehome.config import Config, ConfigError, load_config, platform_mismatch
+from gnomehome.db import open_database
+from gnomehome.db.migrate import MigrationError, current_version
 from gnomehome.protected import ProtectedAssets, ProtectedListError
 
 log = logging.getLogger("gnomehome")
@@ -119,6 +122,61 @@ def cmd_protected_filter(config: Config, _args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# database
+# --------------------------------------------------------------------------
+
+_TABLES = (
+    "asset",
+    "service",
+    "cve",
+    "vulnerability",
+    "risk_score",
+    "event",
+    "incident",
+    "scan_run",
+    "audit_log",
+)
+
+
+def _db_path(config: Config, args: argparse.Namespace) -> Path:
+    return config.paths.dev_db_path if getattr(args, "dev", False) else config.paths.db_path
+
+
+def cmd_migrate(config: Config, args: argparse.Namespace) -> int:
+    path = _db_path(config, args)
+    try:
+        conn = open_database(path)
+    except MigrationError as exc:
+        print(f"migration error: {exc}", file=sys.stderr)
+        return 1
+    print(f"{path}: schema version {current_version(conn)}")
+    conn.close()
+    return 0
+
+
+def cmd_db_status(config: Config, args: argparse.Namespace) -> int:
+    path = _db_path(config, args)
+    if not path.exists():
+        print(f"{path}: not created yet (run `just migrate`)")
+        return 1
+    try:
+        conn = open_database(path)
+    except MigrationError as exc:
+        print(f"migration error: {exc}", file=sys.stderr)
+        return 1
+    mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+    print(f"{path}")
+    print(f"  journal mode     {mode}")
+    print(f"  schema version   {current_version(conn)}")
+    for table in _TABLES:
+        # Table names come from the fixed tuple above, never from input.
+        count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]  # noqa: S608
+        print(f"  {table:<16} {count} row(s)")
+    conn.close()
+    return 0
+
+
+# --------------------------------------------------------------------------
 # Wiring
 # --------------------------------------------------------------------------
 
@@ -143,6 +201,13 @@ def build_parser() -> argparse.ArgumentParser:
         "protected-filter", help="print the tcpdump filter for the zero-packet test"
     )
     tcpdump.set_defaults(handler=cmd_protected_filter)
+
+    migrate = sub.add_parser("migrate", help="create the database or apply pending migrations")
+    migrate.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
+    migrate.set_defaults(handler=cmd_migrate)
+    status = sub.add_parser("db-status", help="show schema version and row counts")
+    status.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
+    status.set_defaults(handler=cmd_db_status)
     return parser
 
 

@@ -41,3 +41,12 @@ def test_protected_filter_prints_tcpdump_expression(config_path, capsys):
     assert capsys.readouterr().out.strip() == (
         "host 192.0.2.10 or ether host 00:00:5e:00:53:01 or ether host 00:00:5e:00:53:02"
     )
+
+
+def test_migrate_then_db_status(config_path, capsys):
+    assert cli.main(["--config", str(config_path), "migrate"]) == 0
+    assert "schema version 1" in capsys.readouterr().out
+    assert cli.main(["--config", str(config_path), "db-status"]) == 0
+    out = capsys.readouterr().out
+    assert "journal mode     wal" in out
+    assert "audit_log" in out
