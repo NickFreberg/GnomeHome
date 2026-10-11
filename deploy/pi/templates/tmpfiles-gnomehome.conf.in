@@ -1,0 +1,3 @@
+# Rendered by `just render-units`. systemd-tmpfiles creates these folders at boot
+# (install as /etc/tmpfiles.d/gnomehome.conf).
+${tmpfiles_lines}

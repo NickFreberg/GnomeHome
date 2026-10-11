@@ -1,0 +1,20 @@
+# Rendered by `just render-units` (install as /etc/rsyslog.d/30-gnomehome.conf).
+# Receives the router's syslog on UDP 514, from the router only, and writes one
+# line per message for `gnomehome syslog`:
+#   <time received, RFC3339> <host> <program[pid]>: <message>
+# The time is the Pi's own (NTP-synced) receive time, not the router's clock.
+module(load="imudp")
+
+template(name="GnomeHomeRouter" type="string"
+         string="%timegenerated:::date-rfc3339% %hostname% %syslogtag%%msg:::sp-if-no-1st-sp%%msg:::drop-last-lf%\n")
+
+ruleset(name="gnomehome_router") {
+    if $$fromhost-ip == "${router_ip}" then {
+        action(type="omfile" file="${router_syslog_path}" template="GnomeHomeRouter"
+               fileOwner="root" fileGroup="${user}" fileCreateMode="0640"
+               dirOwner="root" dirGroup="${user}" dirCreateMode="0750")
+    }
+    stop
+}
+
+input(type="imudp" port="514" ruleset="gnomehome_router")

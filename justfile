@@ -120,6 +120,10 @@ build:
     @command -v cargo-audit >/dev/null || { echo "cargo-audit is not installed. Install it once with: cargo install cargo-audit --locked"; exit 1; }
     cargo audit
 
+# Render the Pi's systemd timers, tmpfiles, rsyslog, and logrotate files from the config
+render-units *args:
+    {{gnomehome}} render-units {{args}}
+
 # Run the API stub on loopback (address from [api].bind in config/gnomehome.toml)
 serve:
     cargo run --package gnomehome-api

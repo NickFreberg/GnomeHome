@@ -33,6 +33,7 @@ from gnomehome.config import Config, ConfigError, load_config, platform_mismatch
 from gnomehome.db import open_database, transaction
 from gnomehome.db.migrate import MigrationError, current_version
 from gnomehome.db.scrub import scrub_protected
+from gnomehome.deploy_units import RenderError, render_pi_files, write_files
 from gnomehome.incidents import list_incidents, resolve_incident
 from gnomehome.protected import Guard, ProtectedAssets, ProtectedListError
 from gnomehome.synthetic.generate import generate
@@ -436,6 +437,24 @@ def cmd_synth_load(config: Config, args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# Pi deploy files
+# --------------------------------------------------------------------------
+
+
+def cmd_render_units(config: Config, args: argparse.Namespace) -> int:
+    out_dir = Path(args.out) if args.out else config.paths.data_dir / "deploy" / "pi"
+    try:
+        files = render_pi_files(config)
+    except RenderError as exc:
+        print(f"Cannot render: {exc}", file=sys.stderr)
+        return 1
+    for path in write_files(files, out_dir):
+        print(f"  wrote {path}")
+    print("Install them on the Pi as described in deploy/pi/README.md.")
+    return 0
+
+
+# --------------------------------------------------------------------------
 # Wiring
 # --------------------------------------------------------------------------
 
@@ -488,6 +507,10 @@ def build_parser() -> argparse.ArgumentParser:
             "--dry-run", action="store_true", help="print the nmap commands; send nothing"
         )
         cmd.set_defaults(handler=handler)
+
+    render = sub.add_parser("render-units", help="render the Pi's systemd/rsyslog/logrotate files")
+    render.add_argument("--out", help="output folder (default: <data_dir>/deploy/pi)")
+    render.set_defaults(handler=cmd_render_units)
 
     syslog = sub.add_parser("syslog", help="read new router syslog lines (DHCP, firewall, ...)")
     syslog.set_defaults(handler=cmd_syslog)

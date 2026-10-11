@@ -1,0 +1,25 @@
+# Rendered by `just render-units` from config/gnomehome.toml. Edit the config, not this file.
+[Unit]
+Description=GnomeHome host discovery (nmap -sn, protected devices excluded)
+Documentation=file://${install_dir}/docs/runbooks/zero-packet-test.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${user}
+Group=${user}
+Environment=GNOMEHOME_CONFIG=${config_file}
+ExecStart=${install_dir}/.venv/bin/gnomehome discover
+# 75 means another scan holds the lock: a quiet skip, not a failure.
+SuccessExitStatus=75
+TimeoutStartSec=30min
+# nmap needs raw sockets for ARP discovery. Only this service and the scan
+# service get these two capabilities (nmap inherits them), so the system nmap
+# binary is never modified with setcap.
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET
+ReadWritePaths=${writable}
+ReadOnlyPaths=${readonly}
+${hardening}
