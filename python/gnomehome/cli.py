@@ -18,7 +18,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from gnomehome import __version__
-from gnomehome.alerts import notifier_from_config
+from gnomehome.alerts import FINDING_MESSAGE, notifier_from_config
+from gnomehome.analytics.intel import FeedSpec, refresh_feeds
+from gnomehome.analytics.run import run_analysis, settings_from_config
 from gnomehome.audit import AuditLog
 from gnomehome.audit import verify as verify_audit
 from gnomehome.collectors.nmap_discovery import (
@@ -407,6 +409,70 @@ def cmd_risks(config: Config, args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# DNS analytics and threat intel
+# --------------------------------------------------------------------------
+
+
+def cmd_analyze(config: Config, args: argparse.Namespace) -> int:
+    conn = open_database(_db_path(config, args))
+    result = run_analysis(conn, settings_from_config(config))
+    conn.close()
+    if result.end is None:
+        print("No DNS events yet: nothing to analyze.")
+        return 0
+    kinds: dict[str, int] = {}
+    for finding in result.findings:
+        kinds[finding.detection] = kinds.get(finding.detection, 0) + 1
+    found = ", ".join(f"{n} {k}" for k, n in sorted(kinds.items())) or "no findings"
+    print(f"DNS analytics up to {result.end}: {found}; {result.incidents_opened} new incident(s).")
+    if result.incidents_opened:
+        notifier_from_config(config, log_only=args.dev).notify(FINDING_MESSAGE)
+    return 0
+
+
+def cmd_intel(config: Config, args: argparse.Namespace) -> int:
+    if not config.threat_feeds:
+        print("No [[threat_intel.feeds]] configured.")
+        return 0
+    specs = [FeedSpec(f.name, f.format, f.url, f.path) for f in config.threat_feeds]
+    conn = open_database(_db_path(config, args))
+    results = refresh_feeds(conn, UrllibClient(), specs)
+    conn.close()
+    failed = False
+    for name, outcome in results.items():
+        failed = failed or isinstance(outcome, str)
+        print(f"  {name}: {outcome if isinstance(outcome, str) else f'{outcome} domains'}")
+    return 1 if failed else 0
+
+
+def cmd_new_domains(config: Config, args: argparse.Namespace) -> int:
+    conn = open_database(_db_path(config, args))
+    end = conn.execute("SELECT MAX(last_seen) FROM device_domain").fetchone()[0]
+    if end is None:
+        print("No domain history yet. Run `just analyze` first.")
+        return 0
+    start = conn.execute("SELECT MIN(first_seen) FROM device_domain").fetchone()[0]
+    rows = conn.execute(
+        """
+        SELECT src_ip, COUNT(*) AS n, group_concat(domain, ', ') AS examples
+          FROM (SELECT * FROM device_domain
+                 WHERE first_seen >= strftime('%Y-%m-%dT%H:%M:%fZ', ?, ?)
+                   AND first_seen > strftime('%Y-%m-%dT%H:%M:%fZ', ?, '+60 minutes')
+                 ORDER BY first_seen)
+         GROUP BY src_ip ORDER BY n DESC
+        """,
+        (end, f"-{args.hours} hours", start),
+    ).fetchall()
+    conn.close()
+    print(f"Domains each device looked up for the first time in the {args.hours} h before {end}:")
+    for row in rows:
+        examples = row["examples"].split(", ")
+        more = f" (+{len(examples) - 3} more)" if len(examples) > 3 else ""
+        print(f"  {row['src_ip']:<15} {row['n']:>4} new: {', '.join(examples[:3])}{more}")
+    return 0
+
+
+# --------------------------------------------------------------------------
 # router syslog
 # --------------------------------------------------------------------------
 
@@ -604,6 +670,22 @@ def build_parser() -> argparse.ArgumentParser:
         cmd = sub.add_parser(name, help=text)
         cmd.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
         cmd.set_defaults(handler=handler)
+    for name, handler, text in (
+        ("analyze", cmd_analyze, "DNS analytics: beaconing, DGA bursts, threat intel matches"),
+        ("intel", cmd_intel, "refresh the threat intel domain lists"),
+    ):
+        cmd = sub.add_parser(name, help=text)
+        cmd.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
+        cmd.set_defaults(handler=handler)
+    new_domains = sub.add_parser(
+        "new-domains", help="domains each device looked up for the first time"
+    )
+    new_domains.add_argument("--hours", type=int, default=24)
+    new_domains.add_argument(
+        "--dev", action="store_true", help="use the synthetic-data dev database"
+    )
+    new_domains.set_defaults(handler=cmd_new_domains)
+
     risks = sub.add_parser("risks", help="show the riskiest assets and why")
     risks.add_argument("--top", type=int, default=10)
     risks.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")

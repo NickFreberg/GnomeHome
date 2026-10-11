@@ -8,7 +8,8 @@ gone as soon as the device is on the list.
 * Assets whose MAC is protected, or whose last IP is protected, are marked
   protected. The schema's CHECK clears their details, and its trigger deletes
   their services, events, risk scores, and incidents.
-* Events whose source or destination IP is protected are deleted.
+* Events, per-device domain history, and open router connections whose source
+  or destination IP is protected are deleted.
 
 Scrubbing never un-protects a row. If a device comes off the list, the
 inventory writer clears the flag the next time a guarded scan sees it.
@@ -59,6 +60,16 @@ def scrub_protected(
             "DELETE FROM event "
             "WHERE gnomehome_ip_protected(src_ip) OR gnomehome_ip_protected(dst_ip)"
         ).rowcount
+        # Tables added in later migrations that also hold per-device data.
+        if _has_table(conn, "device_domain"):
+            deleted += conn.execute(
+                "DELETE FROM device_domain WHERE gnomehome_ip_protected(src_ip)"
+            ).rowcount
+        if _has_table(conn, "conntrack_open"):
+            deleted += conn.execute(
+                "DELETE FROM conntrack_open "
+                "WHERE gnomehome_ip_protected(src_ip) OR gnomehome_ip_protected(dst_ip)"
+            ).rowcount
         if (marked or deleted) and audit is not None:
             audit.append(
                 actor=actor,
@@ -68,3 +79,12 @@ def scrub_protected(
                 details={"assets_marked_protected": marked, "events_deleted": deleted},
             )
     return ScrubResult(assets_marked=marked, events_deleted=deleted)
+
+
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    return (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)
+        ).fetchone()
+        is not None
+    )

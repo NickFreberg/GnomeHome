@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from gnomehome.analytics.intel import parse_feed, store_feed
 from gnomehome.collectors.inventory import record_hosts
 from gnomehome.collectors.router_syslog import IngestResult, ingest_router_syslog
 from gnomehome.db import transaction
@@ -61,6 +62,10 @@ def load_synthetic(
         source="synthetic",
         synthetic=True,
     )
+    feed = data_dir / "threat_feed.txt"
+    if feed.exists():
+        store_feed(conn, "synthetic", parse_feed(feed.read_text(), "domains"))
+
     scan_xml = data_dir / "nmap" / "services.xml"
     services = 0
     if scan_xml.exists():

@@ -68,6 +68,20 @@ score *args:
 risks *args:
     {{gnomehome}} risks {{args}}
 
+# ------------------------------------------------------------- behavior --
+
+# DNS analytics: beaconing, DGA bursts, threat intel matches -> incidents (--dev)
+analyze *args:
+    {{gnomehome}} analyze {{args}}
+
+# Refresh the threat intel domain lists from [[threat_intel.feeds]] (--dev)
+intel *args:
+    {{gnomehome}} intel {{args}}
+
+# Domains each device looked up for the first time (--hours N, --dev)
+new-domains *args:
+    {{gnomehome}} new-domains {{args}}
+
 # ------------------------------------------------------------- synthetic --
 
 # Generate synthetic DNS logs and router flows (fake household, reproducible)

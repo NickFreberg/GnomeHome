@@ -71,6 +71,7 @@ class SchedulesConfig:
     discovery_every_minutes: int = 10
     service_scan_every_minutes: int = 240
     syslog_every_minutes: int = 1
+    analyze_every_minutes: int = 60
     enrich_daily_at: str = "03:30"
     upload_nightly_at: str = "02:00"
     retention_daily_at: str = "04:00"
@@ -98,6 +99,23 @@ class EnrichmentConfig:
     nvd_refresh_hours: int = 24
     #: Refresh the KEV catalog after this long.
     feed_refresh_hours: int = 20
+
+
+@dataclass(frozen=True)
+class AnalyticsConfig:
+    beacon_min_events: int = 12
+    beacon_max_jitter: float = 0.15
+    dga_threshold: float = 0.45
+    dga_burst: int = 8
+    dga_window_minutes: int = 10
+
+
+@dataclass(frozen=True)
+class ThreatFeed:
+    name: str
+    format: str
+    url: str | None = None
+    path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +173,8 @@ class Config:
     retention: RetentionConfig = field(default_factory=RetentionConfig)
     alerts: AlertsConfig = field(default_factory=AlertsConfig)
     enrichment: EnrichmentConfig = field(default_factory=EnrichmentConfig)
+    analytics: AnalyticsConfig = field(default_factory=AnalyticsConfig)
+    threat_feeds: tuple[ThreatFeed, ...] = ()
     api: ApiConfig = field(default_factory=ApiConfig)
     synthetic: SyntheticConfig = field(default_factory=SyntheticConfig)
     #: Every platform table, so the Pi's files can be rendered on the Mac.
@@ -204,6 +224,8 @@ def parse_config(data: dict[str, Any], config_path: Path) -> Config:
             "retention",
             "alerts",
             "enrichment",
+            "analytics",
+            "threat_intel",
             "api",
             "synthetic",
             "platforms",
@@ -236,6 +258,8 @@ def parse_config(data: dict[str, Any], config_path: Path) -> Config:
         retention=_parse_retention(_table(data, "retention")),
         alerts=_parse_alerts(_table(data, "alerts")),
         enrichment=_parse_enrichment(_table(data, "enrichment")),
+        analytics=_parse_analytics(_table(data, "analytics")),
+        threat_feeds=_parse_threat_intel(_table(data, "threat_intel"), base_dir),
         api=_parse_api(_table(data, "api")),
         synthetic=_parse_synthetic(_table(data, "synthetic")),
         platforms=parsed,
@@ -287,7 +311,12 @@ def _parse_schedules(table: dict[str, Any]) -> SchedulesConfig:
     d = SchedulesConfig()
     _reject_unknown(table, set(d.__dataclass_fields__), where)
     values: dict[str, Any] = {}
-    for key in ("discovery_every_minutes", "service_scan_every_minutes", "syslog_every_minutes"):
+    for key in (
+        "discovery_every_minutes",
+        "service_scan_every_minutes",
+        "syslog_every_minutes",
+        "analyze_every_minutes",
+    ):
         values[key] = _int_range(table, key, getattr(d, key), 1, 7 * 24 * 60, where)
     for key in ("enrich_daily_at", "upload_nightly_at", "retention_daily_at"):
         value = _get(table, key, str, getattr(d, key), where)
@@ -334,6 +363,58 @@ def _parse_enrichment(table: dict[str, Any]) -> EnrichmentConfig:
             table, "feed_refresh_hours", d.feed_refresh_hours, 1, 24 * 7, where
         ),
     )
+
+
+def _parse_analytics(table: dict[str, Any]) -> AnalyticsConfig:
+    where = "[analytics]"
+    d = AnalyticsConfig()
+    _reject_unknown(table, set(d.__dataclass_fields__), where)
+
+    def fraction(key: str, default: float) -> float:
+        value = table.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, int | float) or not 0 < value <= 1:
+            raise ConfigError(f"{where} {key} must be a number between 0 and 1")
+        return float(value)
+
+    return AnalyticsConfig(
+        beacon_min_events=_int_range(
+            table, "beacon_min_events", d.beacon_min_events, 4, 10000, where
+        ),
+        beacon_max_jitter=fraction("beacon_max_jitter", d.beacon_max_jitter),
+        dga_threshold=fraction("dga_threshold", d.dga_threshold),
+        dga_burst=_int_range(table, "dga_burst", d.dga_burst, 2, 1000, where),
+        dga_window_minutes=_int_range(
+            table, "dga_window_minutes", d.dga_window_minutes, 1, 1440, where
+        ),
+    )
+
+
+def _parse_threat_intel(table: dict[str, Any], base_dir: Path) -> tuple[ThreatFeed, ...]:
+    where = "[threat_intel]"
+    _reject_unknown(table, {"feeds"}, where)
+    feeds = table.get("feeds", [])
+    if not isinstance(feeds, list):
+        raise ConfigError(f"{where} feeds must be a list of tables ([[threat_intel.feeds]])")
+    out = []
+    for i, feed in enumerate(feeds, start=1):
+        at = f"{where} feed #{i}"
+        if not isinstance(feed, dict):
+            raise ConfigError(f"{at} must be a table")
+        _reject_unknown(feed, {"name", "format", "url", "path"}, at)
+        name = _require(feed, "name", str, at)
+        if not re.match(r"^[a-z0-9_-]{1,32}$", name):
+            raise ConfigError(f"{at} name must be 1-32 lowercase letters, digits, - or _")
+        fmt = _require(feed, "format", str, at)
+        if fmt not in ("hosts", "domains"):
+            raise ConfigError(f'{at} format must be "hosts" or "domains"')
+        url = _get(feed, "url", str, None, at)
+        path = _get(feed, "path", str, None, at)
+        if (url is None) == (path is None):
+            raise ConfigError(f"{at} needs exactly one of url or path")
+        if url is not None and not url.startswith("https://"):
+            raise ConfigError(f"{at} url must use https://")
+        out.append(ThreatFeed(name, fmt, url, _resolve(path, base_dir) if path else None))
+    return tuple(out)
 
 
 def _parse_api(table: dict[str, Any]) -> ApiConfig:

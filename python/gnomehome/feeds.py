@@ -43,6 +43,8 @@ class FeedError(Exception):
 class HttpClient(Protocol):
     def get_json(self, url: str, *, headers: dict[str, str] | None = None) -> Any: ...
 
+    def get_text(self, url: str, *, headers: dict[str, str] | None = None) -> str: ...
+
 
 class UrllibClient:
     def __init__(
@@ -51,12 +53,23 @@ class UrllibClient:
         timeout: float = 60,
         retries: int = 3,
         sleep: Callable[[float], None] = time.sleep,
+        max_bytes: int = 64 * 1024 * 1024,
     ) -> None:
         self.timeout = timeout
         self.retries = retries
         self.sleep = sleep
+        self.max_bytes = max_bytes
 
     def get_json(self, url: str, *, headers: dict[str, str] | None = None) -> Any:
+        try:
+            return json.loads(self._get(url, headers))
+        except json.JSONDecodeError as exc:
+            raise FeedError(f"GET {url.split('?')[0]}: not JSON: {exc}") from None
+
+    def get_text(self, url: str, *, headers: dict[str, str] | None = None) -> str:
+        return self._get(url, headers).decode("utf-8", errors="replace")
+
+    def _get(self, url: str, headers: dict[str, str] | None) -> bytes:
         if not url.startswith("https://"):
             raise FeedError(f"refusing non-HTTPS URL: {url}")
         request = urllib.request.Request(  # noqa: S310 - checked above: https only
@@ -66,12 +79,17 @@ class UrllibClient:
         for attempt in range(self.retries + 1):
             try:
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
-                    return json.load(response)
+                    data = response.read(self.max_bytes + 1)
+                if len(data) > self.max_bytes:
+                    raise FeedError(
+                        f"GET {url.split('?')[0]}: response larger than {self.max_bytes} bytes"
+                    )
+                return data
             except urllib.error.HTTPError as exc:
                 last = exc
                 if exc.code not in (403, 429, 500, 502, 503, 504):
                     break
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            except (urllib.error.URLError, TimeoutError) as exc:
                 last = exc
             if attempt < self.retries:
                 self.sleep(2 ** (attempt + 1))

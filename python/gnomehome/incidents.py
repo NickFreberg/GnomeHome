@@ -51,6 +51,8 @@ def open_incident(
     asset_id: int | None = None,
     evidence: dict[str, Any] | None = None,
     dedup_key: str | None = None,
+    mitre_technique: str | None = None,
+    confidence: float | None = None,
 ) -> int | None:
     """Create an incident. Returns None when an open one with the same key already exists."""
     if severity not in SEVERITIES:
@@ -69,7 +71,7 @@ def open_incident(
     now = utc_now()
     cursor = conn.execute(
         "INSERT INTO incident (created_at, updated_at, asset_id, detection, severity, title, "
-        "summary, evidence) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "summary, evidence, mitre_technique, confidence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             now,
             now,
@@ -79,6 +81,8 @@ def open_incident(
             title,
             summary,
             json.dumps(evidence, sort_keys=True),
+            mitre_technique,
+            confidence,
         ),
     )
     return int(cursor.lastrowid)

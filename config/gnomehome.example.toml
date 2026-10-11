@@ -45,6 +45,7 @@ max_target_hosts = 1024   # refuse target ranges bigger than this (a /22)
 discovery_every_minutes = 10       # quick host discovery: new-device alert under 15 min
 service_scan_every_minutes = 240   # full service scan every 4 hours
 syslog_every_minutes = 1           # read new router syslog lines (DHCP: new devices in ~1-2 min)
+analyze_every_minutes = 60         # DNS analytics: beaconing, DGA bursts, threat intel matches
 enrich_daily_at = "03:30"          # CVE/EPSS/KEV refresh (Phase 3)
 upload_nightly_at = "02:00"        # ship data to Azure (Phase 6)
 retention_daily_at = "04:00"       # delete data older than [retention]
@@ -69,6 +70,22 @@ learning_minutes = 60
 # CVE data from NVD, exploitation odds from FIRST EPSS, and the CISA KEV list.
 nvd_refresh_hours = 24      # look each software version up again daily
 feed_refresh_hours = 20     # refresh the KEV catalog about daily
+
+[analytics]
+# DNS behavior detection (Phase 4). The defaults suit a home network.
+beacon_min_events = 12      # a domain looked up at least this often in 24 h ...
+beacon_max_jitter = 0.15    # ... at a rhythm steadier than this (15%) counts as beaconing
+dga_threshold = 0.45        # 0-1: how machine-generated a name must look
+dga_burst = 8               # this many such names from one device ...
+dga_window_minutes = 10     # ... within this many minutes, mostly NXDOMAIN, is a DGA burst
+
+[threat_intel]
+# Known-bad domain lists, refreshed daily. format = "hosts" or "domains".
+# Use `url` (https only) or `path` (a local file, relative to this folder).
+[[threat_intel.feeds]]
+name = "urlhaus"
+format = "hosts"
+url = "https://urlhaus.abuse.ch/downloads/hostfile/"
 
 [api]
 # The Rust API stub. Loopback only until TLS and logins exist (Phase 8).

@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 TITLE = "GnomeHome"
 NEW_DEVICE_MESSAGE = "New device on your network. Run `just incidents` for details."
 DRIFT_MESSAGE = "A protected device needs attention. Run `just incidents` for details."
+FINDING_MESSAGE = "New security finding on your network. Run `just incidents` for details."
 
 _APPLESCRIPT = (
     "on run argv",
