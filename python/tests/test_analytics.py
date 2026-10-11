@@ -192,6 +192,36 @@ def test_rerunning_never_duplicates_incidents(db):
     assert run_analysis(db, Settings()).incidents_opened == 0
 
 
+def add_flow(conn, ts: datetime, src: str, dst: str, port: int, protocol: str = "udp") -> None:
+    conn.execute(
+        "INSERT INTO event (ts, kind, source, src_ip, src_port, dst_ip, dst_port, protocol) "
+        "VALUES (?, 'flow', 'test', ?, 40000, ?, ?, ?)",
+        (format_ts(ts), src, dst, port, protocol),
+    )
+
+
+def test_dns_bypass_flags_outside_resolvers_only(db):
+    settings = Settings(
+        lan_cidrs=("192.0.2.0/24",), pihole_ip="192.0.2.2", allowed_dns_servers=("9.9.9.9",)
+    )
+    add_flow(db, T0, "192.0.2.41", "8.8.8.8", 53)  # plain DNS to the internet
+    add_flow(db, T0 + timedelta(minutes=1), "192.0.2.41", "1.1.1.1", 443, "tcp")  # DoH
+    add_flow(db, T0, "192.0.2.42", "203.0.113.9", 853, "tcp")  # DNS over TLS anywhere
+    add_flow(db, T0, "192.0.2.43", "192.0.2.2", 53)  # asking Pi-hole: fine
+    add_flow(db, T0, "192.0.2.43", "9.9.9.9", 53)  # the allowed backup DNS: fine
+    add_flow(db, T0, "192.0.2.43", "203.0.113.80", 443, "tcp")  # ordinary HTTPS: fine
+    add_flow(db, T0, "192.0.2.2", "1.1.1.1", 53)  # Pi-hole's own upstream lookups: fine
+    result = run_analysis(db, settings)
+    found = {f.src_ip: f for f in result.findings}
+    assert set(found) == {"192.0.2.41", "192.0.2.42"}
+    stick = found["192.0.2.41"]
+    assert stick.details["resolvers"] == ["1.1.1.1", "8.8.8.8"]
+    assert stick.details["methods"] == {"plain DNS": 1, "DNS over HTTPS": 1}
+    assert result.incidents_opened == 2
+    add_flow(db, T0 + timedelta(hours=1), "192.0.2.41", "8.8.8.8", 53)
+    assert run_analysis(db, settings).incidents_opened == 0  # one open incident per device
+
+
 # ------------------------------------------------------------------ ground truth on synthetic data
 
 
@@ -211,7 +241,8 @@ def test_synthetic_scenarios_are_found_with_no_false_positives(synthetic_day):
     found = sorted((f.detection, f.src_ip, f.domain) for f in result.findings)
     assert found == [
         ("dns.beaconing", "192.0.2.51", "status.cloudsync-update.test"),  # the camera
-        ("dns.dga", "192.0.2.30", found[1][2]),  # the family laptop
+        ("dns.bypass", "192.0.2.41", "8.8.8.8"),  # the streaming stick
+        ("dns.dga", "192.0.2.30", found[2][2]),  # the family laptop
         ("dns.threat_intel", "192.0.2.23", "coinminer-pool.test"),  # the kid's tablet
         ("dns.threat_intel", "192.0.2.23", "malware-drop.test"),
         ("dns.threat_intel", "192.0.2.23", "phish-login-verify.test"),

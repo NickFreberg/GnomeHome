@@ -18,6 +18,7 @@ from gnomehome.analytics.detect import (
     data_end,
     detect_beacons,
     detect_dga,
+    detect_dns_bypass,
     detect_threat_intel,
     update_device_domains,
 )
@@ -44,11 +45,21 @@ def settings_from_config(config: Config) -> Settings:
         dga_burst=a.dga_burst,
         dga_window_minutes=a.dga_window_minutes,
         baseline_minutes=config.alerts.learning_minutes,
+        allowed_dns_servers=a.allowed_dns_servers,
+        lan_cidrs=config.network.lan_cidrs,
+        pihole_ip=config.network.pihole_ip,
     )
 
 
 def run_analysis(conn: sqlite3.Connection, settings: Settings) -> AnalysisResult:
     result = AnalysisResult(end=data_end(conn))
+    with transaction(conn):
+        flow_end = conn.execute("SELECT MAX(ts) FROM event WHERE kind = 'flow'").fetchone()[0]
+        if flow_end is not None:
+            findings = detect_dns_bypass(conn, _checkpoint(conn, "dns_bypass"), flow_end, settings)
+            result.incidents_opened += sum(_open(conn, f) is not None for f in findings)
+            result.findings.extend(findings)
+            _set_checkpoint(conn, "dns_bypass", flow_end)
     if result.end is None:
         return result
     end = result.end
@@ -71,7 +82,7 @@ def run_analysis(conn: sqlite3.Connection, settings: Settings) -> AnalysisResult
                 result.incidents_opened += 1
         for detector in ("dga", "threat_intel"):
             _set_checkpoint(conn, detector, end)
-    result.findings = findings
+    result.findings.extend(findings)
     return result
 
 
@@ -158,6 +169,26 @@ def _open(conn: sqlite3.Connection, f: Finding) -> int | None:
             evidence={"src_ip": f.src_ip, "domain": f.domain, **d},
             dedup_key=f"intel:{f.src_ip}:{d['indicator']}",
             confidence=0.9,
+        )
+    if f.detection == "dns.bypass":
+        methods = " and ".join(sorted(d["methods"]))
+        resolvers = ", ".join(d["resolvers"])
+        return open_incident(
+            conn,
+            detection=f.detection,
+            severity="low",
+            title="Device skips Pi-hole for DNS",
+            summary=(
+                f"What happened: between {f.first_ts} and {f.last_ts}, {device} sent "
+                f"{f.count} DNS connection(s) ({methods}) straight to {resolvers} instead of "
+                "Pi-hole. Why it matters: GnomeHome can't see, filter, or check this device's "
+                "lookups against threat lists (risk R-07). Many streaming devices do this on "
+                "purpose. If you want it filtered, block outbound DNS for it on the router."
+            ),
+            asset_id=f.asset_id,
+            evidence={"src_ip": f.src_ip, "count": f.count, **d},
+            dedup_key=f"bypass:{f.src_ip}",
+            confidence=0.8,
         )
     raise ValueError(f"unknown detection {f.detection}")
 

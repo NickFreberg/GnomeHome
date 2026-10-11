@@ -419,14 +419,15 @@ def cmd_analyze(config: Config, args: argparse.Namespace) -> int:
     conn = open_database(_db_path(config, args))
     result = run_analysis(conn, settings_from_config(config))
     conn.close()
-    if result.end is None:
+    if result.end is None and not result.findings:
         print("No DNS events yet: nothing to analyze.")
         return 0
     kinds: dict[str, int] = {}
     for finding in result.findings:
         kinds[finding.detection] = kinds.get(finding.detection, 0) + 1
     found = ", ".join(f"{n} {k}" for k, n in sorted(kinds.items())) or "no findings"
-    print(f"DNS analytics up to {result.end}: {found}; {result.incidents_opened} new incident(s).")
+    upto = f" up to {result.end}" if result.end else ""
+    print(f"DNS analytics{upto}: {found}; {result.incidents_opened} new incident(s).")
     if result.incidents_opened:
         notifier_from_config(config, log_only=args.dev).notify(FINDING_MESSAGE)
     return 0

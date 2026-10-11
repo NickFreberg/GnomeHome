@@ -28,6 +28,9 @@ lan_cidrs = ["192.0.2.0/24"]
 # The router's LAN address (its admin page address). On the Pi, rsyslog
 # accepts syslog only from this address.
 router_ip = "192.0.2.1"
+# Pi-hole's LAN address (the Pi's address once it's set up). Optional. Its own
+# upstream lookups are then never reported as a device skipping Pi-hole.
+pihole_ip = "192.0.2.2"
 
 [scan]
 top_ports = 1000          # how many common TCP ports the service scan checks
@@ -79,6 +82,9 @@ beacon_max_jitter = 0.15    # ... at a rhythm steadier than this (15%) counts as
 dga_threshold = 0.45        # 0-1: how machine-generated a name must look
 dga_burst = 8               # this many such names from one device ...
 dga_window_minutes = 10     # ... within this many minutes, mostly NXDOMAIN, is a DGA burst
+# DNS servers outside the LAN that devices may use without being reported for skipping
+# Pi-hole, such as the backup DNS the router hands out (NFR-09). Example: ["9.9.9.9"]
+allowed_dns_servers = []
 
 [threat_intel]
 # Known-bad domain lists, refreshed daily. format = "hosts" or "domains".
@@ -143,6 +149,7 @@ sudo_path = "/usr/bin/sudo"
 arp_command = ["/bin/ip", "neigh", "show"]     # check with `command -v ip` on the Pi
 pihole_ftl_db = "/etc/pihole/pihole-FTL.db"
 pihole_log = "/var/log/pihole/pihole.log"
+pihole_log_group = "pihole"                    # the DNS tailer joins this group to read pihole_log
 scheduler = "systemd"
 alert_channels = ["log"]                       # push to the iPhone comes in Phase 7
 router_syslog_path = "/var/log/gnomehome/router.log"   # written by rsyslog (deploy/pi)

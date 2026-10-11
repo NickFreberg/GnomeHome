@@ -52,6 +52,8 @@ class NetworkConfig:
     lan_cidrs: tuple[str, ...]
     #: The router's LAN address: the only sender rsyslog accepts on the Pi.
     router_ip: str | None = None
+    #: Pi-hole's LAN address. Its own upstream lookups aren't "skipping Pi-hole".
+    pihole_ip: str | None = None
 
 
 @dataclass(frozen=True)
@@ -109,6 +111,9 @@ class AnalyticsConfig:
     dga_threshold: float = 0.45
     dga_burst: int = 8
     dga_window_minutes: int = 10
+    #: DNS servers outside the LAN that devices may use (such as the router's backup DNS),
+    #: so traffic to them isn't reported as skipping Pi-hole.
+    allowed_dns_servers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -158,6 +163,8 @@ class PlatformConfig:
     install_dir: Path | None = None
     service_user: str | None = None
     config_file: Path | None = None
+    #: The group that may read pihole_log (the DNS tailer joins it). Pi only.
+    pihole_log_group: str | None = None
     #: A file holding the free NVD API key (never in git). Optional: without it,
     #: lookups are slower (NVD allows 5 requests per 30 seconds).
     nvd_api_key_file: Path | None = None
@@ -280,17 +287,22 @@ def parse_config(data: dict[str, Any], config_path: Path) -> Config:
 
 def _parse_network(table: dict[str, Any]) -> NetworkConfig:
     where = "[network]"
-    _reject_unknown(table, {"scan_targets", "lan_cidrs", "router_ip"}, where)
-    router_ip = _get(table, "router_ip", str, None, where)
-    if router_ip is not None:
+    _reject_unknown(table, {"scan_targets", "lan_cidrs", "router_ip", "pihole_ip"}, where)
+
+    def ipv4(key: str) -> str | None:
+        value = _get(table, key, str, None, where)
+        if value is None:
+            return None
         try:
-            router_ip = str(ipaddress.IPv4Address(router_ip))
+            return str(ipaddress.IPv4Address(value))
         except ValueError:
-            raise ConfigError(f"{where} router_ip {router_ip!r} is not an IPv4 address") from None
+            raise ConfigError(f"{where} {key} {value!r} is not an IPv4 address") from None
+
     return NetworkConfig(
         scan_targets=_cidr_list(table, "scan_targets", where),
         lan_cidrs=_cidr_list(table, "lan_cidrs", where),
-        router_ip=router_ip,
+        router_ip=ipv4("router_ip"),
+        pihole_ip=ipv4("pihole_ip"),
     )
 
 
@@ -394,7 +406,18 @@ def _parse_analytics(table: dict[str, Any]) -> AnalyticsConfig:
         dga_window_minutes=_int_range(
             table, "dga_window_minutes", d.dga_window_minutes, 1, 1440, where
         ),
+        allowed_dns_servers=_ip_list(table, "allowed_dns_servers", where),
     )
+
+
+def _ip_list(table: dict[str, Any], key: str, where: str) -> tuple[str, ...]:
+    values = table.get(key, [])
+    if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+        raise ConfigError(f"{where} {key} must be a list of IP addresses")
+    try:
+        return tuple(str(ipaddress.ip_address(v)) for v in values)
+    except ValueError as exc:
+        raise ConfigError(f"{where} {key}: {exc}") from None
 
 
 def _parse_threat_intel(table: dict[str, Any], base_dir: Path) -> tuple[ThreatFeed, ...]:
@@ -476,6 +499,7 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
             "install_dir",
             "service_user",
             "config_file",
+            "pihole_log_group",
             "nvd_api_key_file",
             "ssh_path",
             "router_ssh_user",
@@ -532,6 +556,9 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
     service_user = _get(table, "service_user", str, None, where)
     if service_user is not None and not _USER_RE.match(service_user):
         raise ConfigError(f"{where} service_user {service_user!r} is not a valid user name")
+    pihole_log_group = _get(table, "pihole_log_group", str, None, where)
+    if pihole_log_group is not None and not _USER_RE.match(pihole_log_group):
+        raise ConfigError(f"{where} pihole_log_group {pihole_log_group!r} is not a group name")
 
     def optional_path(key: str) -> Path | None:
         value = _get(table, key, str, None, where)
@@ -556,6 +583,7 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
         install_dir=optional_absolute("install_dir"),
         service_user=service_user,
         config_file=optional_absolute("config_file"),
+        pihole_log_group=pihole_log_group,
         nvd_api_key_file=optional_path("nvd_api_key_file"),
         ssh_path=optional_absolute("ssh_path"),
         router_ssh_user=_ssh_user(table, where),

@@ -14,10 +14,15 @@ Each detector reads DNS events from SQLite and returns findings. The job in
   ``dga_window_minutes``, and at least half of them answered NXDOMAIN.
 * **Threat intel.** A lookup of a domain, or any parent domain, on a
   known-bad list.
+* **DNS bypass (risk R-07).** A device sends DNS somewhere other than
+  Pi-hole: plain DNS (port 53) or DNS over TLS (853) to a server outside the
+  LAN, or HTTPS to a well-known DNS-over-HTTPS resolver. Its lookups are then
+  invisible to every DNS detector above. Uses the router's connection data.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import itertools
 import sqlite3
 import statistics
@@ -40,6 +45,11 @@ class Settings:
     dga_burst: int = 8
     dga_window_minutes: int = 10
     baseline_minutes: int = 60
+    #: DNS servers outside the LAN that devices may use, such as the router's backup DNS.
+    allowed_dns_servers: tuple[str, ...] = ()
+    lan_cidrs: tuple[str, ...] = ()
+    #: Pi-hole itself, whose upstream lookups are expected.
+    pihole_ip: str | None = None
 
 
 @dataclass
@@ -253,3 +263,70 @@ def detect_threat_intel(conn: sqlite3.Connection, since: str | None, end: str) -
         finding.last_ts = ts
         finding.details["blocked" if status == "blocked" else "resolved"] += 1
     return list(grouped.values())
+
+
+# --------------------------------------------------------------------------
+# DNS bypass
+# --------------------------------------------------------------------------
+
+#: Public resolvers that answer DNS over HTTPS on port 443. HTTPS to them is
+#: treated as DNS. Not exhaustive: a device can always use a resolver nobody lists.
+DOH_RESOLVERS = frozenset(
+    {
+        "1.1.1.1", "1.0.0.1",                # Cloudflare
+        "8.8.8.8", "8.8.4.4",                # Google
+        "9.9.9.9", "149.112.112.112",        # Quad9
+        "208.67.222.222", "208.67.220.220",  # OpenDNS
+        "94.140.14.14", "94.140.15.15",      # AdGuard
+    }
+)  # fmt: skip
+
+
+def detect_dns_bypass(
+    conn: sqlite3.Connection, since: str | None, end: str, s: Settings
+) -> list[Finding]:
+    lans = [ipaddress.ip_network(c) for c in s.lan_cidrs]
+    allowed = set(s.allowed_dns_servers)
+    grouped: dict[str, Finding] = {}
+    for src_ip, asset_id, dst_ip, dst_port, ts in conn.execute(
+        "SELECT src_ip, asset_id, dst_ip, dst_port, ts FROM event "
+        "WHERE kind = 'flow' AND dst_port IN (53, 853, 443) "
+        "AND (? IS NULL OR ts > ?) AND ts <= ? ORDER BY ts",
+        (since, since, end),
+    ):
+        if src_ip == s.pihole_ip or dst_ip in allowed or _inside(dst_ip, lans):
+            continue
+        if dst_port == 443 and dst_ip not in DOH_RESOLVERS:
+            continue
+        method = {53: "plain DNS", 853: "DNS over TLS", 443: "DNS over HTTPS"}[dst_port]
+        finding = grouped.get(src_ip)
+        if finding is None:
+            finding = grouped[src_ip] = Finding(
+                "dns.bypass", src_ip, asset_id, dst_ip, ts, ts, 0, {"resolvers": {}, "methods": {}}
+            )
+        finding.count += 1
+        finding.last_ts = ts
+        resolvers, methods = finding.details["resolvers"], finding.details["methods"]
+        resolvers[dst_ip] = resolvers.get(dst_ip, 0) + 1
+        methods[method] = methods.get(method, 0) + 1
+    for finding in grouped.values():
+        resolvers = finding.details["resolvers"]
+        finding.domain = max(resolvers, key=resolvers.get)  # the busiest resolver
+        finding.details["resolvers"] = sorted(resolvers)
+    return list(grouped.values())
+
+
+#: Destinations that can't be the internet: RFC1918, IPv6 unique-local, link-local, loopback.
+_LOCAL_NETS = tuple(
+    ipaddress.ip_network(n)
+    for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "127.0.0.0/8",
+              "fc00::/7", "fe80::/10", "::1/128")  # hygiene: allow
+)  # fmt: skip
+
+
+def _inside(ip: str | None, networks: list) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip or "")
+    except ValueError:
+        return False
+    return any(addr.version == n.version and addr in n for n in (*networks, *_LOCAL_NETS))
