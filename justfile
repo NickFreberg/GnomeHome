@@ -14,9 +14,14 @@ default:
 
 # ---------------------------------------------------------------- setup ----
 
-# Install Python deps into .venv
+# Install Python deps into .venv and copy the example config (never overwrites)
 setup:
     uv sync
+    @if [ ! -f config/gnomehome.toml ]; then cp config/gnomehome.example.toml config/gnomehome.toml && echo "Created config/gnomehome.toml from the example. Edit scan_targets, lan_cidrs, and interface for your network."; else echo "config/gnomehome.toml already exists, left alone."; fi
+
+# Show the resolved config and check that required tools are installed
+doctor:
+    {{gnomehome}} doctor
 
 # ---------------------------------------------------------------- quality --
 

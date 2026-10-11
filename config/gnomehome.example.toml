@@ -1,0 +1,106 @@
+# GnomeHome configuration
+# =======================
+#
+# This is the ONE config file for GnomeHome. `just setup` copies it to
+# config/gnomehome.toml, which is gitignored. Edit that copy, not this file.
+#
+# Everything here uses FAKE values. 192.0.2.0/24 is a documentation-only
+# network ("TEST-NET-1") that never exists on a real LAN, so the example can't
+# accidentally point at a real device. The scan job refuses to scan it.
+#
+# How paths work:
+#   - Relative paths are relative to THIS file's folder (config/), so "../data"
+#     means the data/ folder at the top of the repo.
+#   - "~" means your home folder.
+#   - Set GNOMEHOME_CONFIG=/some/other/file.toml to use a different file.
+
+# Which machine this is: "mac" (development) or "pi" (the sensor).
+# It picks which [platforms.<name>] table below is used.
+platform = "mac"
+
+[network]
+# Subnets the scan job may scan. Use your home LAN, e.g. the router's
+# network as shown in the ASUS app (often a /24). Must be a private
+# (RFC1918) range; anything else is refused.
+scan_targets = ["192.0.2.0/24"]
+# What counts as "inside the house" for analytics. Usually the same as above.
+lan_cidrs = ["192.0.2.0/24"]
+
+[scan]
+top_ports = 1000          # how many common TCP ports the service scan checks
+service_detection = true  # nmap -sV: ask services what software and version they run
+os_detection = true       # nmap -O: guess the operating system
+timing = 3                # nmap -T3 (0 slowest to 5 fastest); 3 is nmap's normal pace
+host_timeout = "5m"       # give up on a single device after this long
+max_retries = 2
+reverse_dns = false       # look up hostnames via DNS (off: hostnames come from DHCP later)
+max_target_hosts = 1024   # refuse target ranges bigger than this (a /22)
+
+[schedules]
+# Used to generate launchd (Mac) or systemd (Pi) schedules. On the Mac you can
+# also just run jobs by hand with `just discover` and `just scan`.
+discovery_every_minutes = 10       # quick host discovery: new-device alert under 15 min
+service_scan_every_minutes = 240   # full service scan every 4 hours
+enrich_daily_at = "03:30"          # CVE/EPSS/KEV refresh (Phase 3)
+upload_nightly_at = "02:00"        # ship data to Azure (Phase 6)
+retention_daily_at = "04:00"       # delete data older than [retention]
+self_assessment_weekly = "Sun 09:00"
+
+[retention]
+# Days of local history to keep (from the plan's Data understanding table).
+# The audit log is never deleted.
+dns_days = 30
+syslog_days = 30
+flow_days = 30
+scan_days = 90
+dhcp_days = 90
+
+[api]
+# The Rust API stub. Loopback only until TLS and logins exist (Phase 8).
+# 8787 avoids Pi-hole's dashboard on 8080.
+bind = "127.0.0.1:8787"
+
+[synthetic]
+# Fake DNS and flow data for building later phases without real traffic.
+seed = 42                  # same seed, same data, every time
+days = 1
+start_date = "2026-10-05"
+
+# ---------------------------------------------------------------------------
+# Machine-specific settings. Only the table matching `platform` is used, but
+# both are checked so mistakes in the Pi section show up on the Mac.
+# ---------------------------------------------------------------------------
+
+[platforms.mac]
+data_dir = "../data"
+db_path = "../data/gnomehome.sqlite3"
+dev_db_path = "../data/dev.sqlite3"            # synthetic data goes here, never the real DB
+run_dir = "../data/run"                        # lock file, nmap exclude file
+scans_dir = "../data/scans"                    # raw nmap XML output
+synthetic_dir = "../data/synthetic"
+protected_assets = "protected_assets.yaml"     # i.e. config/protected_assets.yaml
+interface = "en0"                              # usually Wi-Fi on a MacBook; check with `ifconfig`
+nmap_path = "/opt/homebrew/bin/nmap"           # Homebrew on Apple silicon
+nmap_privilege = "sudo"                        # nmap needs root on macOS to see MAC addresses
+sudo_path = "/usr/bin/sudo"
+arp_command = ["/usr/sbin/arp", "-an"]         # read-only look at the ARP cache; sends nothing
+pihole_ftl_db = "../pihole/etc-pihole/pihole-FTL.db"   # Pi-hole in Docker (Appendix A)
+# pihole_log is not set: the Docker setup doesn't expose /var/log/pihole.
+scheduler = "manual"
+
+[platforms.pi]
+data_dir = "/var/lib/gnomehome"
+db_path = "/var/lib/gnomehome/gnomehome.sqlite3"
+dev_db_path = "/var/lib/gnomehome/dev.sqlite3"
+run_dir = "/run/gnomehome"
+scans_dir = "/var/lib/gnomehome/scans"
+synthetic_dir = "/var/lib/gnomehome/synthetic"
+protected_assets = "/etc/gnomehome/protected_assets.yaml"
+interface = "eth0"
+nmap_path = "/usr/bin/nmap"
+nmap_privilege = "capabilities"                # setcap on nmap, see deploy/pi/README.md
+sudo_path = "/usr/bin/sudo"
+arp_command = ["/bin/ip", "neigh", "show"]     # check with `command -v ip` on the Pi
+pihole_ftl_db = "/etc/pihole/pihole-FTL.db"
+pihole_log = "/var/log/pihole/pihole.log"
+scheduler = "systemd"
