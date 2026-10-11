@@ -1,0 +1,12 @@
+# Every week: new devices, newly exposed ports, and new CVEs (FR-17).
+# Run by the gnomehome-playbook-weekly timer.
+name: weekly-self-assessment
+version: 1
+description: Weekly review of what changed on the network.
+tier: scheduled
+mitre:
+  mitigation: M1016       # vulnerability scanning
+act:
+  - action: python.self_assess
+report:
+  notify: none            # the assessment queues its own notification

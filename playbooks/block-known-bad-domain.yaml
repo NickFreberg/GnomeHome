@@ -1,0 +1,21 @@
+# A device looked up a domain on a threat list, and Pi-hole answered it.
+# Block the domain for every device, for a week, without asking: the impact is
+# low (one bad domain stops resolving) and the confidence is high.
+name: block-known-bad-domain
+version: 1
+description: Block a threat-list domain in Pi-hole after a device resolved it.
+tier: auto_act
+mitre:
+  technique: T1071.004    # what it responds to: application-layer protocol, DNS
+  mitigation: M1021       # restrict web-based content
+trigger:
+  detection: dns.threat_intel
+  min_confidence: 0.8
+  evidence:
+    resolved: { gt: 0 }   # only when Pi-hole didn't already block it
+act:
+  - action: pihole.block_domain
+    domain: "{evidence.indicator}"
+    hours: 168
+report:
+  notify: action_taken
