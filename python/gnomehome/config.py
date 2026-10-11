@@ -22,6 +22,7 @@ import os
 import re
 import sys
 import tomllib
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -170,12 +171,30 @@ class PlatformConfig:
     nvd_api_key_file: Path | None = None
     #: A file holding the SAS token for the nightly upload (never in git). Optional.
     storage_sas_file: Path | None = None
+    #: Pi-hole's app password, for the playbook engine's domain blocks. Optional.
+    pihole_password_file: Path | None = None
+    #: The gnomehome command, which the Rust playbook engine runs for Python-only actions.
+    gnomehome_cli: Path | None = None
     # Router SSH, for the connection-table pull (FR-08). All optional.
     ssh_path: Path | None = None
     router_ssh_user: str | None = None
     router_ssh_port: int = 22
     router_ssh_key: Path | None = None
     router_known_hosts: Path | None = None
+
+
+RESPONSE_ACTIONS = ("pihole.block_domain", "router.quarantine")
+
+
+@dataclass(frozen=True)
+class ResponseConfig:
+    """Phase 7: how much the playbook engine may really do. Dry run unless told otherwise."""
+
+    mode: str = "dry_run"
+    #: Actions allowed to run for real once mode = "live".
+    live_actions: tuple[str, ...] = ()
+    approval_minutes: int = 60
+    pihole_api: str = "http://127.0.0.1/api"
 
 
 @dataclass(frozen=True)
@@ -202,6 +221,7 @@ class Config:
     api: ApiConfig = field(default_factory=ApiConfig)
     synthetic: SyntheticConfig = field(default_factory=SyntheticConfig)
     cloud: CloudConfig = field(default_factory=CloudConfig)
+    response: ResponseConfig = field(default_factory=ResponseConfig)
     #: Every platform table, so the Pi's files can be rendered on the Mac.
     platforms: dict[str, PlatformConfig] = field(default_factory=dict)
 
@@ -254,6 +274,7 @@ def parse_config(data: dict[str, Any], config_path: Path) -> Config:
             "api",
             "synthetic",
             "cloud",
+            "response",
             "platforms",
         },
         "top level",
@@ -289,6 +310,7 @@ def parse_config(data: dict[str, Any], config_path: Path) -> Config:
         api=_parse_api(_table(data, "api")),
         synthetic=_parse_synthetic(_table(data, "synthetic")),
         cloud=_parse_cloud(_table(data, "cloud")),
+        response=_parse_response(_table(data, "response")),
         platforms=parsed,
     )
 
@@ -378,6 +400,30 @@ def _parse_cloud(table: dict[str, Any]) -> CloudConfig:
     if not _CONTAINER_RE.match(container):
         raise ConfigError(f"{where} container {container!r} is not a valid container name")
     return CloudConfig(storage_account=account, container=container)
+
+
+def _parse_response(table: dict[str, Any]) -> ResponseConfig:
+    where = "[response]"
+    d = ResponseConfig()
+    _reject_unknown(table, set(d.__dataclass_fields__), where)
+    mode = _get(table, "mode", str, d.mode, where)
+    if mode not in ("dry_run", "live"):
+        raise ConfigError(f'{where} mode must be "dry_run" or "live"')
+    actions = table.get("live_actions", [])
+    if not isinstance(actions, list) or not all(a in RESPONSE_ACTIONS for a in actions):
+        raise ConfigError(f"{where} live_actions must be a list from {RESPONSE_ACTIONS}")
+    api = _get(table, "pihole_api", str, d.pihole_api, where)
+    host = urllib.parse.urlsplit(api).hostname
+    if not api.startswith("http://") or host not in ("127.0.0.1", "::1", "localhost"):
+        raise ConfigError(f"{where} pihole_api must be http:// on this machine (loopback only)")
+    return ResponseConfig(
+        mode=mode,
+        live_actions=tuple(dict.fromkeys(actions)),
+        approval_minutes=_int_range(
+            table, "approval_minutes", d.approval_minutes, 5, 7 * 24 * 60, where
+        ),
+        pihole_api=api.rstrip("/"),
+    )
 
 
 def _parse_retention(table: dict[str, Any]) -> RetentionConfig:
@@ -532,6 +578,8 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
             "pihole_log_group",
             "nvd_api_key_file",
             "storage_sas_file",
+            "pihole_password_file",
+            "gnomehome_cli",
             "ssh_path",
             "router_ssh_user",
             "router_ssh_port",
@@ -617,6 +665,8 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
         pihole_log_group=pihole_log_group,
         nvd_api_key_file=optional_path("nvd_api_key_file"),
         storage_sas_file=optional_path("storage_sas_file"),
+        pihole_password_file=optional_path("pihole_password_file"),
+        gnomehome_cli=optional_path("gnomehome_cli"),
         ssh_path=optional_absolute("ssh_path"),
         router_ssh_user=_ssh_user(table, where),
         router_ssh_port=_int_range(table, "router_ssh_port", 22, 1, 65535, where),

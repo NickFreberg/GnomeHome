@@ -106,6 +106,16 @@ bind = "127.0.0.1:8787"
 storage_account = ""
 container = "raw"
 
+[response]
+# Phase 7: the playbook engine (automated Blue Team). In "dry_run" mode every playbook
+# records what it would do and does nothing. To let an action run for real, set
+# mode = "live" AND list the action in live_actions. Disruptive actions (quarantine)
+# always wait for your approval first.
+mode = "dry_run"
+live_actions = []           # from "pihole.block_domain", "router.quarantine"
+approval_minutes = 60       # how long an approval request stays open
+pihole_api = "http://127.0.0.1/api"   # Pi-hole v6 API on this machine (loopback only)
+
 [synthetic]
 # Fake DNS and flow data for building later phases without real traffic.
 seed = 42                  # same seed, same data, every time
@@ -139,6 +149,7 @@ osascript_path = "/usr/bin/osascript"          # macOS's built-in tool for notif
 # Keep it out of git; this path is outside the repo. Without a key, lookups are just slower.
 nvd_api_key_file = "~/.config/gnomehome/nvd_api_key"
 storage_sas_file = "~/.config/gnomehome/storage_sas"   # optional; see infra/README.md
+gnomehome_cli = "../.venv/bin/gnomehome"       # what the Rust playbook engine runs for Python actions
 # router_syslog_path is not set: the router sends its syslog to the Pi.
 # On the Mac, `just synth-load` exercises the same code with synthetic syslog.
 
@@ -167,6 +178,8 @@ service_user = "gnomehome"                     # unprivileged user the jobs run 
 config_file = "/etc/gnomehome/gnomehome.toml"  # this file's location on the Pi
 nvd_api_key_file = "/etc/gnomehome/nvd_api_key"   # optional, root:gnomehome 0640
 storage_sas_file = "/etc/gnomehome/storage_sas"   # optional, root:gnomehome 0640 (Phase 6 upload)
+pihole_password_file = "/etc/gnomehome/pihole_app_password"   # optional, root:gnomehome 0640 (Phase 7)
+gnomehome_cli = "/opt/gnomehome/.venv/bin/gnomehome"
 # Router SSH for the connection-table pull (enable SSH, LAN only, key login, in the
 # router: Administration > System). The key must be owned by the service user, mode 0600.
 ssh_path = "/usr/bin/ssh"
