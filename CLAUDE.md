@@ -30,7 +30,8 @@ a portfolio piece, so code, docs, and commits should read well to a reviewer.
 4. **Never commit secrets or real identifiers**: no real MACs, IPs, hostnames, API keys, or certificates. Use fake values:
    IPs from the documentation ranges `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`; MACs from the documentation
    range `00:00:5e:00:53:xx`; domains on the `.test` or `.example` TLDs. `python/tests/test_repo_hygiene.py` scans
-   tracked files for RFC1918 addresses and non-documentation MACs.
+   committed and new files for RFC1918 addresses and non-documentation MACs. A line that genuinely needs a fake
+   RFC1918 value (such as a scan-target test) carries the comment `hygiene: allow`.
 5. **Treat device-supplied text as untrusted**: hostnames, DNS names, banners, and packet fields. Use parameterized SQL only.
    Never feed that text into a shell. Later, never let it steer the AI agent (R-04).
 
@@ -46,7 +47,8 @@ a portfolio piece, so code, docs, and commits should read well to a reviewer.
   (`nmap_privilege = "sudo"`). On the Pi, nmap gets file capabilities instead (`"capabilities"`).
 - Rust builds target generic aarch64. **Never use `target-cpu=native`**, because the Pi's Cortex-A53 lacks instructions the M1 has.
   Cross-compile for the Pi with `cross`, and never build on the Pi.
-- Synthetic data (`just synth`) stands in for anything the Mac can't see.
+- Synthetic data (`just synth`) stands in for anything the Mac can't see. It loads only into the **dev**
+  database (`dev_db_path`), never the real one, and its ground-truth labels are never stored.
 
 ## Architecture contract
 
@@ -60,13 +62,24 @@ a portfolio piece, so code, docs, and commits should read well to a reviewer.
   `testdata/audit_vectors.json`. The audit table is append-only (triggers block UPDATE and DELETE).
 - Shared cross-language test vectors live in `testdata/`.
 
+## Where things are
+
+- Guard: `python/gnomehome/protected.py`. Identifier normalization: `identifiers.py`. DB alignment with the
+  list: `db/scrub.py`.
+- nmap job: `collectors/nmap_discovery.py` (seven protection layers, listed in its docstring), parser
+  `nmap_xml.py` (defusedxml, untrusted-text cleaning), writer `collectors/inventory.py`, drift check
+  `collectors/arp_cache.py`.
+- Tests drive the nmap job with a fake runner and fixture XML. The only real-nmap test targets `127.0.0.1`.
+- Runbook before any real scan: `docs/runbooks/zero-packet-test.md`.
+
 ## Commands
 
 ```
 just setup        # uv sync + copy example configs if missing
-just test         # Python + Rust tests + hygiene scan
+just test         # Python + Rust tests (includes the hygiene scan)
 just lint         # ruff, rustfmt, clippy -D warnings
 just doctor       # show resolved config and tool status
+just scan-dry     # print the nmap commands without sending anything
 just --list       # everything else
 ```
 

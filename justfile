@@ -62,17 +62,17 @@ synth-load *args:
 
 # -------------------------------------------------------------- database --
 
-# Create the SQLite database or apply pending migrations
-migrate:
-    {{gnomehome}} migrate
+# Create the SQLite database or apply pending migrations (--dev for the synthetic DB)
+migrate *args:
+    {{gnomehome}} migrate {{args}}
 
-# Show schema version and row counts
-db-status:
-    {{gnomehome}} db-status
+# Show schema version and row counts (--dev for the synthetic DB)
+db-status *args:
+    {{gnomehome}} db-status {{args}}
 
 # Recompute the audit log's hash chain and report any tampering
-audit-verify:
-    {{gnomehome}} audit-verify
+audit-verify *args:
+    {{gnomehome}} audit-verify {{args}}
 
 # ---------------------------------------------------------------- quality --
 
