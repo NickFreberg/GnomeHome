@@ -56,3 +56,18 @@ def test_audit_verify_on_fresh_database(config_path, capsys):
     cli.main(["--config", str(config_path), "migrate"])
     assert cli.main(["--config", str(config_path), "audit-verify"]) == 0
     assert "chain intact" in capsys.readouterr().out
+
+
+def test_scan_dry_run_prints_commands_and_problems(config_path, capsys):
+    assert cli.main(["--config", str(config_path), "scan", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "DRY RUN" in out
+    assert "--excludefile" in out
+    assert "192.0.2.10" in out
+    assert "These would stop a real scan" in out  # example values and TEST-NET target
+
+
+def test_real_scan_with_example_config_is_refused_before_anything_is_sent(config_path, capsys):
+    assert cli.main(["--config", str(config_path), "scan"]) == 1
+    assert "REFUSED (nothing was sent)" in capsys.readouterr().err
+    assert not (config_path.parent.parent / "data" / "gnomehome.sqlite3").exists()

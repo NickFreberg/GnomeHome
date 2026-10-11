@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shlex
 import shutil
 import socket
 import subprocess
@@ -16,6 +17,13 @@ from pathlib import Path
 
 from gnomehome import __version__
 from gnomehome.audit import verify as verify_audit
+from gnomehome.collectors.nmap_discovery import (
+    GuardViolation,
+    NmapFailed,
+    ScanRefused,
+    ScanResult,
+    run_scan,
+)
 from gnomehome.config import Config, ConfigError, load_config, platform_mismatch
 from gnomehome.db import open_database
 from gnomehome.db.migrate import MigrationError, current_version
@@ -197,6 +205,72 @@ def cmd_audit_verify(config: Config, args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------
+# scanning
+# --------------------------------------------------------------------------
+
+
+def _print_dry_run(result: ScanResult) -> None:
+    print("DRY RUN: nothing will be sent and nothing will be written.\n")
+    print(f"Exclude file would list {len(result.excluded)} protected address(es):")
+    for line in result.excluded:
+        print(f"  {line}")
+    print("  (plus any protected MAC the ARP cache shows at another IP)\n")
+    print("Phase 1, host discovery:")
+    print(f"  {shlex.join(result.commands[0])}")
+    if len(result.commands) > 1:
+        print("\nPhase 2, service scan (only hosts found up in phase 1, minus protected ones):")
+        print(f"  {shlex.join(result.commands[1])}")
+    if result.problems:
+        print("\nThese would stop a real scan:")
+        for problem in result.problems:
+            print(f"  - {problem}")
+    else:
+        print("\nNo problems found. A real scan would be allowed.")
+
+
+def _scan(config: Config, args: argparse.Namespace, mode: str) -> int:
+    if not args.dry_run and config.paths.nmap_privilege == "sudo":
+        print(
+            "nmap needs administrator rights on macOS to see MAC addresses, so it runs with "
+            "sudo. macOS may ask for your login password (nothing shows as you type)."
+        )
+    try:
+        result = run_scan(config, mode=mode, dry_run=args.dry_run)
+    except ProtectedListError as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 1
+    except ScanRefused as exc:
+        print(f"REFUSED (nothing was sent): {exc}", file=sys.stderr)
+        return 1
+    except GuardViolation as exc:
+        print(f"STOPPED by the protected-asset guard: {exc}", file=sys.stderr)
+        return 3
+    except NmapFailed as exc:
+        print(f"nmap failed: {exc}", file=sys.stderr)
+        return 1
+    if result.dry_run:
+        _print_dry_run(result)
+        return 0
+    print(f"\nScan {result.scan_id} done: {result.hosts_up} device(s) up", end="")
+    print(f", {result.services_seen} open service(s)." if mode == "service" else ".")
+    if result.new_devices:
+        print(f"New device(s) ({len(result.new_devices)}):")
+        for ip, mac, vendor in result.new_devices:
+            print(f"  {ip or '-':<15} {mac}  {vendor or 'unknown vendor'}")
+    else:
+        print("No new devices.")
+    return 0
+
+
+def cmd_scan(config: Config, args: argparse.Namespace) -> int:
+    return _scan(config, args, "service")
+
+
+def cmd_discover(config: Config, args: argparse.Namespace) -> int:
+    return _scan(config, args, "discovery")
+
+
+# --------------------------------------------------------------------------
 # Wiring
 # --------------------------------------------------------------------------
 
@@ -231,6 +305,16 @@ def build_parser() -> argparse.ArgumentParser:
     audit = sub.add_parser("audit-verify", help="recompute and check the audit log hash chain")
     audit.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
     audit.set_defaults(handler=cmd_audit_verify)
+
+    for name, handler, text in (
+        ("scan", cmd_scan, "host discovery plus service scan (nmap)"),
+        ("discover", cmd_discover, "host discovery only (nmap -sn)"),
+    ):
+        cmd = sub.add_parser(name, help=text)
+        cmd.add_argument(
+            "--dry-run", action="store_true", help="print the nmap commands; send nothing"
+        )
+        cmd.set_defaults(handler=handler)
     return parser
 
 

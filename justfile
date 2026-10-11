@@ -34,6 +34,22 @@ protected-check:
 protected-filter:
     {{gnomehome}} protected-filter
 
+# ---------------------------------------------------------------- scanning --
+# Real scans send packets on your network. Fill in config/protected_assets.yaml
+# and run the zero-packet test (docs/runbooks/zero-packet-test.md) first.
+
+# Host discovery + service scan with nmap (on the Mac: asks for your password for sudo)
+scan:
+    {{gnomehome}} scan
+
+# Host discovery only (quick; for new-device detection)
+discover:
+    {{gnomehome}} discover
+
+# Show exactly what `just scan` would run, without sending anything
+scan-dry:
+    {{gnomehome}} scan --dry-run
+
 # -------------------------------------------------------------- database --
 
 # Create the SQLite database or apply pending migrations
