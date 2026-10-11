@@ -347,7 +347,12 @@ impl Guard {
     /// The first protected device mentioned in free text, so a refusal can be audited
     /// by its label.
     pub fn find_in_text(&self, text: &str) -> Option<Match> {
-        for token in runs(text, |c| c.is_ascii_digit() || c == '.') {
+        // Same rule as Python: an address may touch single dots (a sentence's end, a
+        // hostname) but not be part of a longer dotted number.
+        let addresses = runs(text, |c| c.is_ascii_digit() || c == '.')
+            .flat_map(|run| run.split(".."))
+            .map(|piece| piece.trim_matches('.'));
+        for token in addresses {
             if is_ipv4_token(token)
                 && normalize_ip(token).is_ok()
                 && let Some(m) = self.assets.match_target(Some(token), None)

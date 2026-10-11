@@ -64,7 +64,9 @@ DOCUMENTATION_NETWORKS = tuple(
 
 _LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$")
 # Identifier-shaped tokens inside free text (see Guard.text_mentions_protected).
-_TEXT_IPV4 = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
+# An address may touch dots (end of a sentence, inside a hostname) but not a longer
+# dotted number: no digit or "digit." before it, no digit or ".digit" after it.
+_TEXT_IPV4 = re.compile(r"(?<!\d)(?<!\d\.)(?:\d{1,3}\.){3}\d{1,3}(?!\.?\d)")
 _TEXT_OCTET_RUN = re.compile(
     r"(?<![0-9A-Fa-f:-])[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5,}(?![0-9A-Fa-f:-])"
 )
