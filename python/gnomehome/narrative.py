@@ -400,3 +400,54 @@ def weekly_assessment(
         ),
         confidence=1.0,
     )
+
+
+# --------------------------------------------------------------------------
+# AI check-in (FR-18)
+# --------------------------------------------------------------------------
+
+AI_LABEL = "written by the AI check-in from the week's summary; it can be wrong"
+
+
+def ai_checkin(*, week_end: str, report: str, highlights: list[str]) -> Narrative:
+    points = "; ".join(quote_untrusted(h, 200) or "" for h in highlights[:5])
+    return Narrative(
+        detection="ai.checkin",
+        severity="low",
+        title=f"Weekly AI check-in for the week ending {week_end}",
+        occurred_at=f"{week_end}T23:59:59.999Z",
+        device="the whole network",
+        what_happened=f"The AI check-in ({AI_LABEL}) says: {report}",
+        why_it_matters=(
+            "A weekly read of the summary can spot patterns that single alerts miss. "
+            + (f"Highlights: {points}." if points else "It raised no highlights.")
+        ),
+        next_steps=(
+            "Read it alongside the incident log. Any action it suggests appears as its own "
+            "incident and waits for your approval."
+        ),
+        confidence=None,
+    )
+
+
+def ai_suggestion(*, device: str, playbook: str, reason: str, week_end: str) -> Narrative:
+    return Narrative(
+        detection="ai.suggestion",
+        severity="medium",
+        title=f"The AI check-in suggests {playbook}",
+        occurred_at=f"{week_end}T23:59:59.999Z",
+        device=device,
+        what_happened=(
+            f'For {device}, the AI check-in suggests the "{playbook}" playbook. Its reason '
+            f'({AI_LABEL}): "{quote_untrusted(reason, 300)}"'
+        ),
+        why_it_matters=(
+            "The suggestion is based only on the week's summary, which devices can influence. "
+            "Nothing happens unless you approve it."
+        ),
+        next_steps=(
+            "Check the device's incidents first. Approve in the dashboard (with a fresh code) only "
+            "if they support it; otherwise deny it."
+        ),
+        confidence=None,
+    )

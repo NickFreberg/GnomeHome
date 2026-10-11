@@ -119,6 +119,9 @@ module checkin 'modules/checkin.bicep' = {
     image: checkinImage
     modelName: openAiModel
     modelVersion: openAiModelVersion
+    monitorEndpoint: notifications.outputs.ingestionEndpoint
+    monitorDcrImmutableId: notifications.outputs.ruleImmutableId
+    monitorDcrResourceId: notifications.outputs.ruleId
   }
 }
 

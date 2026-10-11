@@ -84,8 +84,8 @@ resource rule 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
         destinations: [
           'logs'
         ]
-        // Keep only the two expected columns and the four known kinds.
-        transformKql: 'source | where Kind in ("approval_needed", "action_taken", "action_failed", "weekly_assessment") | project TimeGenerated, Kind'
+        // Keep only the two expected columns and the known kinds.
+        transformKql: 'source | where Kind in ("approval_needed", "action_taken", "action_failed", "weekly_assessment", "weekly_checkin") | project TimeGenerated, Kind'
         outputStream: stream
       }
     ]

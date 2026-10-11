@@ -31,7 +31,9 @@ class UploadError(Exception):
     """The upload isn't configured correctly, or the storage account refused it."""
 
 
-def load_sas(path: Path) -> str:
+def load_sas(path: Path, *, allow_read: bool = False) -> str:
+    """A SAS token from a file. Upload tokens must not read or delete; the check-in
+    fetch passes ``allow_read`` for its read-only token, which must not write."""
     try:
         mode = path.stat().st_mode
         token = path.read_text().strip().removeprefix("?")
@@ -44,7 +46,11 @@ def load_sas(path: Path) -> str:
     fields = urllib.parse.parse_qs(token)
     if not {"sv", "sig"} <= set(fields):
         raise UploadError(f"{path} doesn't look like a SAS token (it needs sv= and sig=)")
-    if "r" in fields.get("sp", [""])[0] or "d" in fields.get("sp", [""])[0]:
+    permissions = fields.get("sp", [""])[0]
+    if allow_read:
+        if any(p in permissions for p in "wcd"):
+            raise UploadError("the reports token can write or delete: make one with read only")
+    elif "r" in permissions or "d" in permissions:
         raise UploadError(
             "the SAS token allows reading or deleting: make one with create and write only"
         )

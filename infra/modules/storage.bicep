@@ -104,6 +104,15 @@ resource lake 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05
   }
 }
 
+// reports: the weekly AI check-in's output, which only the check-in job may write.
+resource reports 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobs
+  name: 'reports'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 // Raw files move to the cool tier after 30 days and are deleted after 400.
 resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
   parent: account
@@ -144,3 +153,4 @@ resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05
 output accountName string = account.name
 output accountId string = account.id
 output dfsEndpoint string = account.properties.primaryEndpoints.dfs
+output blobEndpoint string = account.properties.primaryEndpoints.blob

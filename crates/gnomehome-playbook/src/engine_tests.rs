@@ -373,3 +373,16 @@ fn settings_default_to_dry_run() {
     assert!(!Settings::from_table(&table, false).live);
     assert!(!Settings::from_table(&toml::Table::new(), false).live);
 }
+
+#[test]
+fn ai_suggestions_always_ask_first_and_only_from_the_allow_list() {
+    let mut s = setup(live(&["router.quarantine", "pihole.block_domain"]));
+    let ok = r#"{"playbook": "quarantine-suspected-c2", "source": "ai.checkin"}"#;
+    let not_allowed =
+        r#"{"playbook": "block-known-bad-domain", "indicator": "x.test", "resolved": 1}"#;
+    incident(&s.engine.conn, "ai.suggestion", 0.0, Some(1), ok); // no confidence: still asks
+    incident(&s.engine.conn, "ai.suggestion", 0.0, Some(1), not_allowed);
+    let report = s.engine.run_once().unwrap();
+    assert_eq!((report.started, report.awaiting_approval), (1, 1));
+    assert!(s.engine.effects.calls.is_empty()); // live mode, yet nothing acted
+}

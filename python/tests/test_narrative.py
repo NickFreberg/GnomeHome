@@ -97,6 +97,13 @@ def every_template() -> list[narrative.Narrative]:
             reasons=["CVE-2099-0001 (known exploited)", "Telnet open"],
             scored_at=T1,
         ),
+        narrative.ai_checkin(week_end="2026-10-10", report="Quiet week.", highlights=["x"]),
+        narrative.ai_suggestion(
+            device=DEVICE,
+            playbook="quarantine-suspected-c2",
+            reason="beacon",
+            week_end="2026-10-10",
+        ),
         narrative.weekly_assessment(
             week_start="2026-10-05",
             week_end="2026-10-11",

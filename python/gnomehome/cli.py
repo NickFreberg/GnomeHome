@@ -25,6 +25,7 @@ from gnomehome.analytics.run import run_analysis, settings_from_config
 from gnomehome.assessment import assess_week
 from gnomehome.audit import AuditLog
 from gnomehome.audit import verify as verify_audit
+from gnomehome.checkin import CheckinError, fetch_report, import_report, load_report_file
 from gnomehome.collectors.nmap_discovery import (
     GuardViolation,
     NmapFailed,
@@ -638,6 +639,38 @@ def cmd_notify(config: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_checkin_fetch(config: Config, args: argparse.Namespace) -> int:
+    try:
+        guard = Guard(ProtectedAssets.load(config.paths.protected_assets))
+    except ProtectedListError as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 1
+    try:
+        if args.file:
+            report = load_report_file(Path(args.file))
+        else:
+            account, sas_file = config.cloud.storage_account, config.paths.reports_sas_file
+            if not account or sas_file is None:
+                print("Check-in fetch not configured ([cloud] storage_account, reports_sas_file).")
+                return 0
+            week_end = args.week_end or yesterday(datetime.now(UTC).date())
+            report = fetch_report(account, load_sas(sas_file, allow_read=True), week_end)
+        conn = open_database(_db_path(config, args))
+        try:
+            result = import_report(conn, guard, report)
+        finally:
+            conn.close()
+    except (CheckinError, UploadError) as exc:
+        print(f"Check-in not imported: {exc}", file=sys.stderr)
+        return 1
+    print(
+        f"Check-in for the week ending {result.week_end}: "
+        f"{'stored' if result.report_stored else 'already stored'}, "
+        f"{result.suggestions} suggestion(s) waiting for review, {result.dropped} dropped."
+    )
+    return 0
+
+
 def cmd_self_assess(config: Config, args: argparse.Namespace) -> int:
     week_end = date.fromisoformat(args.week_end) if args.week_end else datetime.now(UTC).date()
     conn = open_database(_db_path(config, args))
@@ -978,6 +1011,14 @@ def build_parser() -> argparse.ArgumentParser:
     notify = sub.add_parser("notify", help="deliver queued notifications (fixed messages only)")
     notify.add_argument("--dev", action="store_true", help="use the dev database, local only")
     notify.set_defaults(handler=cmd_notify)
+
+    fetch = sub.add_parser(
+        "checkin-fetch", help="import the weekly AI check-in and its suggestions"
+    )
+    fetch.add_argument("--week-end", help="the week's last day, YYYY-MM-DD (default: yesterday)")
+    fetch.add_argument("--file", help="import a report file instead of downloading it")
+    fetch.add_argument("--dev", action="store_true", help="use the synthetic-data dev database")
+    fetch.set_defaults(handler=cmd_checkin_fetch)
 
     assess = sub.add_parser("self-assess", help="weekly self-assessment: what changed (FR-17)")
     assess.add_argument("--week-end", help="last day of the week, YYYY-MM-DD (default: today)")

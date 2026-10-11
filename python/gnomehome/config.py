@@ -80,6 +80,7 @@ class SchedulesConfig:
     upload_nightly_at: str = "02:00"
     retention_daily_at: str = "04:00"
     self_assessment_weekly: str = "Sun 09:00"
+    checkin_fetch_weekly: str = "Sun 11:00"
 
 
 @dataclass(frozen=True)
@@ -179,6 +180,8 @@ class PlatformConfig:
     nvd_api_key_file: Path | None = None
     #: A file holding the SAS token for the nightly upload (never in git). Optional.
     storage_sas_file: Path | None = None
+    #: A read-only SAS token for the `reports` container (the AI check-in). Optional.
+    reports_sas_file: Path | None = None
     #: The client secret for push notifications through Azure Monitor. Optional.
     monitor_secret_file: Path | None = None
     #: Pi-hole's app password, for the playbook engine's domain blocks. Optional.
@@ -395,10 +398,11 @@ def _parse_schedules(table: dict[str, Any]) -> SchedulesConfig:
         if not _DAILY_RE.match(value):
             raise ConfigError(f'{where} {key} must be a 24-hour time like "03:30"')
         values[key] = value
-    weekly = _get(table, "self_assessment_weekly", str, d.self_assessment_weekly, where)
-    if not _WEEKLY_RE.match(weekly):
-        raise ConfigError(f'{where} self_assessment_weekly must look like "Sun 09:00"')
-    values["self_assessment_weekly"] = weekly
+    for key in ("self_assessment_weekly", "checkin_fetch_weekly"):
+        weekly = _get(table, key, str, getattr(d, key), where)
+        if not _WEEKLY_RE.match(weekly):
+            raise ConfigError(f'{where} {key} must look like "Sun 09:00"')
+        values[key] = weekly
     return SchedulesConfig(**values)
 
 
@@ -626,6 +630,7 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
             "storage_sas_file",
             "pihole_password_file",
             "monitor_secret_file",
+            "reports_sas_file",
             "gnomehome_cli",
             "playbooks_dir",
             "ssh_path",
@@ -715,6 +720,7 @@ def _parse_platform(table: dict[str, Any], name: str, base_dir: Path) -> Platfor
         storage_sas_file=optional_path("storage_sas_file"),
         pihole_password_file=optional_path("pihole_password_file"),
         monitor_secret_file=optional_path("monitor_secret_file"),
+        reports_sas_file=optional_path("reports_sas_file"),
         gnomehome_cli=optional_path("gnomehome_cli"),
         playbooks_dir=optional_path("playbooks_dir"),
         ssh_path=optional_absolute("ssh_path"),

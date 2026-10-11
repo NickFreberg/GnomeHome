@@ -31,6 +31,11 @@ use crate::playbook::{Action, Condition, Op, Param, Playbook};
 
 const ACTOR: &str = "system:playbook";
 
+/// Incidents the Pi creates from the weekly AI check-in's suggestions.
+pub const AI_SUGGESTION: &str = "ai.suggestion";
+/// Playbooks an AI suggestion may name (the same list as `gnomehome.agent.prompt`).
+pub const AI_PLAYBOOKS: [&str; 1] = ["quarantine-suspected-c2"];
+
 /// What `[response]` in the config allows.
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -193,18 +198,38 @@ impl<E: Effects> Engine<E> {
             .collect::<Result<_, _>>()?
         };
         for incident in incidents {
-            let Some(playbook) = self
-                .playbooks
-                .iter()
-                .find(|p| p.tier != Tier::Scheduled && p.matches(&incident.detection))
-                .cloned()
-            else {
+            let found = if incident.detection == AI_SUGGESTION {
+                self.ai_playbook(&incident)
+            } else {
+                self.playbooks
+                    .iter()
+                    .find(|p| p.tier != Tier::Scheduled && p.matches(&incident.detection))
+                    .cloned()
+            };
+            let Some(playbook) = found else {
                 continue;
             };
             report.started += 1;
             self.start_run(&playbook, &incident, report)?;
         }
         Ok(())
+    }
+
+    /// The playbook an AI check-in suggestion names, if it's on the allow-list. It always
+    /// asks first, and its trigger conditions don't apply: the owner's approval is the gate.
+    fn ai_playbook(&self, incident: &Incident) -> Option<Playbook> {
+        let name = incident.evidence["playbook"].as_str()?;
+        if !AI_PLAYBOOKS.contains(&name) {
+            return None;
+        }
+        let mut playbook = self
+            .playbooks
+            .iter()
+            .find(|p| p.name == name && p.tier != Tier::Scheduled)?
+            .clone();
+        playbook.tier = Tier::AskFirst;
+        playbook.trigger = None;
+        Some(playbook)
     }
 
     fn start_run(

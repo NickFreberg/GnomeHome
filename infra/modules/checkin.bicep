@@ -21,8 +21,15 @@ param modelCapacity int = 10
 @description('Cron schedule (UTC) for the weekly check-in.')
 param schedule string = '0 9 * * 0'
 
+@description('Logs Ingestion endpoint and rule for the "check-in ready" push.')
+param monitorEndpoint string
+param monitorDcrImmutableId string
+param monitorDcrResourceId string
+
 var openAiUser = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 var storageBlobDataReader = '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1'
+var storageBlobDataContributor = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+var monitoringMetricsPublisher = '3913510d-42f4-4e42-8a64-420c390055eb'
 
 resource openai 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   name: '${namePrefix}-aoai-${take(suffix, 6)}'
@@ -79,6 +86,41 @@ resource summariesAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
   scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataReader)
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' existing = {
+  parent: storageAccount
+  name: 'default'
+}
+
+resource reportsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' existing = {
+  parent: blobService
+  name: 'reports'
+}
+
+// Write access to the reports container only: the agent can't change any data.
+resource reportsAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(reportsContainer.id, identity.id, storageBlobDataContributor)
+  scope: reportsContainer
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributor)
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource notifyRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' existing = {
+  name: last(split(monitorDcrResourceId, '/'))
+}
+
+resource pushAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(monitorDcrResourceId, identity.id, monitoringMetricsPublisher)
+  scope: notifyRule
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', monitoringMetricsPublisher)
     principalId: identity.properties.principalId
     principalType: 'ServicePrincipal'
   }
@@ -154,7 +196,19 @@ resource job 'Microsoft.App/jobs@2024-03-01' = if (!empty(image)) {
             }
             {
               name: 'GNOMEHOME_SUMMARIES_URL'
-              value: '${storageAccount.properties.primaryEndpoints.dfs}lake/gold/checkin/'
+              value: '${storageAccount.properties.primaryEndpoints.blob}lake/gold/checkin/'
+            }
+            {
+              name: 'GNOMEHOME_REPORTS_URL'
+              value: '${storageAccount.properties.primaryEndpoints.blob}reports/checkin'
+            }
+            {
+              name: 'GNOMEHOME_MONITOR_ENDPOINT'
+              value: monitorEndpoint
+            }
+            {
+              name: 'GNOMEHOME_MONITOR_DCR_ID'
+              value: monitorDcrImmutableId
             }
           ]
         }
