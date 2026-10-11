@@ -17,6 +17,7 @@ user, schedule, or IP is hardcoded.
 | `gnomehome-discover.service` / `.timer` | `/etc/systemd/system/` | Host discovery every `discovery_every_minutes` |
 | `gnomehome-scan.service` / `.timer` | `/etc/systemd/system/` | Service scan every `service_scan_every_minutes` |
 | `gnomehome-syslog.service` / `.timer` | `/etc/systemd/system/` | Router syslog ingest every `syslog_every_minutes` (DHCP, new-device and drift alerts) |
+| `gnomehome-enrich.service` / `.timer` | `/etc/systemd/system/` | Daily at `enrich_daily_at`: CVEs from NVD, EPSS, KEV, then risk scores |
 | `tmpfiles-gnomehome.conf` | `/etc/tmpfiles.d/gnomehome.conf` | Creates the data, scans, and run folders at boot |
 | `rsyslog-gnomehome.conf` | `/etc/rsyslog.d/30-gnomehome.conf` | Accepts the router's syslog (UDP 514, from `router_ip` only) into `router_syslog_path` |
 | `logrotate-gnomehome` | `/etc/logrotate.d/gnomehome` | Keeps `retention.syslog_days` of raw router syslog |
@@ -69,6 +70,9 @@ sudo nano /etc/gnomehome/gnomehome.toml          # platform = "pi", your LAN, ro
 sudo nano /etc/gnomehome/protected_assets.yaml   # the laptop's real MACs and reserved IP
 ```
 
+Optional: put your free NVD API key in `/etc/gnomehome/nvd_api_key` (`root:gnomehome`, mode `0640`).
+Enrichment works without it, just more slowly.
+
 **4. Render and install the system files**
 
 ```
@@ -110,7 +114,7 @@ On the Pi, the scan in step 3 of that runbook is `sudo systemctl start gnomehome
 **8. Turn on the schedules**
 
 ```
-sudo systemctl enable --now gnomehome-syslog.timer gnomehome-discover.timer gnomehome-scan.timer
+sudo systemctl enable --now gnomehome-syslog.timer gnomehome-discover.timer gnomehome-scan.timer gnomehome-enrich.timer
 systemctl list-timers 'gnomehome-*'
 ```
 

@@ -204,10 +204,11 @@ def test_load_drops_every_protected_record(tmp_path: Path, dataset: Path):
     for identifier in (*LAPTOP_IDS, "192.0.2.88", "WORK-LAPTOP"):
         assert identifier not in every_row
 
-    # The inventory comes from router DHCP: 12 normal devices, plus the laptop's two
-    # adapters recorded as existence only.
+    # The inventory comes from router DHCP (12 devices) plus the scan (the router itself),
+    # and the laptop's two adapters are recorded as existence only.
     normal = conn.execute("SELECT COUNT(*) FROM asset WHERE protected = 0").fetchone()[0]
-    assert normal == result.assets == 12
+    assert normal == result.assets == 13
+    assert result.services > 0
     protected = conn.execute("SELECT * FROM asset WHERE protected = 1").fetchall()
     assert sorted(r["mac"] for r in protected) == ["00:00:5e:00:53:01", "00:00:5e:00:53:02"]
     assert all(r["last_ip"] is None and r["hostname"] is None for r in protected)
@@ -241,3 +242,18 @@ def test_labels_are_never_stored(tmp_path: Path, dataset: Path):
     load_synthetic(conn, load_guard(EXAMPLE_PROTECTED), dataset)
     attrs = " ".join(r[0] or "" for r in conn.execute("SELECT attrs FROM event"))
     assert "label" not in attrs and "beacon" not in attrs
+
+
+def test_synthetic_scan_adds_vendors_and_services_but_never_the_laptop(
+    tmp_path: Path, dataset: Path
+):
+    assert b"00:00:5E:00:53:01" not in (dataset / "nmap" / "services.xml").read_bytes()
+    conn = open_database(tmp_path / "dev.sqlite3")
+    load_synthetic(conn, load_guard(EXAMPLE_PROTECTED), dataset)
+    camera = conn.execute(
+        "SELECT a.vendor, a.device_type, COUNT(s.id) AS n FROM asset a "
+        "JOIN service s ON s.asset_id = a.id WHERE a.last_ip = '192.0.2.51'"
+    ).fetchone()
+    assert camera["vendor"] == "Example Camera Co" and camera["device_type"] == "webcam"
+    assert camera["n"] == 4
+    assert conn.execute("SELECT COUNT(*) FROM incident").fetchone()[0] == 2  # scan is baseline

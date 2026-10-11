@@ -76,6 +76,10 @@ a portfolio piece, so code, docs, and commits should read well to a reviewer.
   (existence only, never updated). Free text goes through `guard.text_mentions_protected()`.
 - Incidents and alerts: `incidents.py` (dedup keys, learning window, drift incidents by label only),
   `alerts.py` (banners pass text to osascript as arguments only, never device-supplied text).
+- Risk: `cpe.py` (CPE 2.2 to 2.3, version comparison, rule matching), `feeds.py` (NVD/EPSS/KEV clients
+  behind an `HttpClient` interface; tests use `python/tests/fixtures/feeds/`), `enrich.py` (stores CVE rules,
+  matches locally), `risk.py` (model risk-v1, documented in `docs/risk-model.md`). Change the formula, bump
+  `MODEL_VERSION`, and update the doc together.
 - Tests drive the nmap job with a fake runner and fixture XML. The only real-nmap test targets `127.0.0.1`.
 - Jobs that run from timers print protected devices by label only: the journal is stored on disk.
 - Runbook before any real scan: `docs/runbooks/zero-packet-test.md`.

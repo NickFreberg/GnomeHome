@@ -61,6 +61,7 @@ def render_pi_files(
         "discover_every": str(config.schedules.discovery_every_minutes),
         "scan_every": str(config.schedules.service_scan_every_minutes),
         "syslog_every": str(config.schedules.syslog_every_minutes),
+        "enrich_at": config.schedules.enrich_daily_at,
         "syslog_days": str(config.retention.syslog_days),
         "tmpfiles_lines": "\n".join(
             f"d {d} 0750 {p.service_user} {p.service_user} -" for d in writable_dirs

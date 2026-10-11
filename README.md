@@ -6,8 +6,9 @@ SOC (inventory, risk scoring, detection, and response) on a $35 computer.
 
 The full project plan, which is the source of truth, is in [`docs/PLAN.md`](docs/PLAN.md).
 
-> **Status:** Phase 1 foundation and Phase 2 (asset inventory with new-device alerts), developed on
-> an M1 MacBook before the Pi arrives. The Pi's system files are written but not yet run on hardware.
+> **Status:** Phases 1 to 3 (the minimum complete project: inventory, alerts, vulnerability risk
+> scoring), developed on an M1 MacBook before the Pi arrives. The Pi's system files are written but
+> not yet run on hardware.
 
 ## What's here so far
 
@@ -25,6 +26,9 @@ The full project plan, which is the source of truth, is in [`docs/PLAN.md`](docs
   router password stored. Firewall and other router lines are kept as events.
 - **Alerts**: plain-English incidents for new devices (after a learning window) and for a protected device
   that shows up somewhere unexpected, plus a macOS banner on the Mac. Push to the iPhone comes in Phase 7.
+- **Risk scoring**: CVEs from NVD re-checked against each software version, EPSS exploitation odds,
+  and CISA's known-exploited list, combined into a daily 0–100 score per device. Every point is
+  explained in plain words ([risk model](docs/risk-model.md)).
 - **Pi deployment files**: systemd timers, rsyslog, logrotate, and tmpfiles, rendered from the config
   (`just render-units`, see [`deploy/pi/README.md`](deploy/pi/README.md)).
 - **Synthetic data**: a fake household's Pi-hole DNS log and router connection-table snapshots, with
@@ -98,6 +102,9 @@ It captures packets during a scan and proves nothing reaches the work laptop.
 | `just discover` | Host discovery only (quick, for new-device detection). Uses sudo on the Mac |
 | `just scan` | Host discovery plus service scan. Uses sudo on the Mac |
 | `just syslog` | Read new router syslog lines: DHCP into the inventory, alerts (on the Pi) |
+| `just enrich` | Fetch CVEs (NVD), EPSS, and KEV, and match them to scanned software |
+| `just score` | Compute today's risk score for every device |
+| `just risks` | The riskiest devices and the reasons behind each score |
 | `just incidents` | List open incidents: new devices, protected-device drift (`--all`, `--dev`) |
 | `just incident-resolve <id>` | Mark an incident resolved |
 | `just synth` | Generate synthetic DNS logs, router flows, and router syslog (`--seed`, `--days`) |

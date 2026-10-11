@@ -5,6 +5,9 @@ This runs the same code the real collectors use, wherever it exists:
 * The router syslog goes through the real router syslog job, so the inventory
   is built from DHCP, and new-device and drift incidents are raised exactly
   as they will be on the Pi.
+* The synthetic service scan goes through the real nmap parser and inventory
+  writer (which refuses protected hosts), adding vendors, OS guesses, and
+  services for enrichment and risk scoring.
 * DNS queries and flows pass the guard before storage (flows match on source
   or destination) and attach to assets by IP.
 
@@ -18,11 +21,15 @@ import json
 import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
+from gnomehome.collectors.inventory import record_hosts
 from gnomehome.collectors.router_syslog import IngestResult, ingest_router_syslog
 from gnomehome.db import transaction
+from gnomehome.nmap_xml import parse_nmap_xml
 from gnomehome.protected import Guard
+from gnomehome.timeutil import format_ts
 
 
 @dataclass(frozen=True)
@@ -32,6 +39,7 @@ class LoadResult:
     flow_events: int
     syslog: IngestResult
     dropped_protected: int
+    services: int = 0
 
 
 def _jsonl(path: Path) -> Iterator[dict]:
@@ -53,6 +61,21 @@ def load_synthetic(
         source="synthetic",
         synthetic=True,
     )
+    scan_xml = data_dir / "nmap" / "services.xml"
+    services = 0
+    if scan_xml.exists():
+        xml = scan_xml.read_bytes()
+        run = parse_nmap_xml(xml)
+        scanned_at = format_ts(datetime.fromtimestamp(_scan_start(xml), UTC))
+        with transaction(conn):
+            scan_id = conn.execute(
+                "INSERT INTO scan_run (kind, started_at, finished_at, status, targets, "
+                "nmap_version) VALUES ('service', ?, ?, 'success', '[]', 'synthetic')",
+                (scanned_at, scanned_at),
+            ).lastrowid
+            services = record_hosts(
+                conn, guard, run.hosts, scan_id=scan_id, now=scanned_at, with_services=True
+            ).services_seen
     with transaction(conn):
         ip_to_asset = {
             row[1]: row[0]
@@ -115,4 +138,11 @@ def load_synthetic(
         flow_events=len(flow_rows),
         syslog=syslog,
         dropped_protected=guard.passive_drops + syslog.dropped_protected,
+        services=services,
     )
+
+
+def _scan_start(xml: bytes) -> int:
+    marker = b'start="'
+    index = xml.index(marker) + len(marker)
+    return int(xml[index : xml.index(b'"', index)])

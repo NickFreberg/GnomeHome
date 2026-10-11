@@ -23,6 +23,7 @@ def test_every_template_renders_with_no_placeholders_left(files):
         "gnomehome-discover.service", "gnomehome-discover.timer",
         "gnomehome-scan.service", "gnomehome-scan.timer",
         "gnomehome-syslog.service", "gnomehome-syslog.timer",
+        "gnomehome-enrich.service", "gnomehome-enrich.timer",
         "tmpfiles-gnomehome.conf", "rsyslog-gnomehome.conf", "logrotate-gnomehome",
     }  # fmt: skip
     for name, content in files.items():
@@ -104,3 +105,11 @@ def test_units_pass_systemd_analyze_verify(files, tmp_path: Path):
         if line.strip() and "is not executable: No such file or directory" not in line
     ]
     assert problems == []
+
+
+def test_enrichment_runs_daily_and_scores_even_if_a_feed_fails(files):
+    assert "OnCalendar=*-*-* 03:30:00" in files["gnomehome-enrich.timer"]
+    unit = files["gnomehome-enrich.service"]
+    assert "ExecStart=-/opt/gnomehome/.venv/bin/gnomehome enrich" in unit
+    assert "ExecStart=/opt/gnomehome/.venv/bin/gnomehome score" in unit
+    assert "AmbientCapabilities" not in unit

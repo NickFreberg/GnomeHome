@@ -10,6 +10,7 @@ Layout::
     <out>/flows/conntrack_snapshots.txt   raw, as the router's table would read
     <out>/flows/flows.jsonl           one normalized record per connection
     <out>/router/syslog.log           raw, as rsyslog on the Pi writes the router's syslog
+    <out>/nmap/services.xml           a service scan in nmap's XML format (protected laptop absent)
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from gnomehome.synthetic import dns, flows, router
+from gnomehome.synthetic import dns, flows, router, services
 from gnomehome.synthetic.household import build_household
 from gnomehome.timeutil import format_ts
 
@@ -59,7 +60,7 @@ def generate(
         random.Random(f"{seed}:router"), devices, start, hours
     )
 
-    for sub in ("dns", "flows", "router"):
+    for sub in ("dns", "flows", "router", "nmap"):
         (out_dir / sub).mkdir(parents=True, exist_ok=True)
 
     household = [
@@ -113,6 +114,9 @@ def generate(
         for flow in flow_list:
             out.write(json.dumps(flows.flow_record(flow), sort_keys=True) + "\n")
 
+    (out_dir / "nmap" / "services.xml").write_bytes(
+        services.service_scan_xml(devices, start + timedelta(minutes=30))
+    )
     with open(out_dir / "router" / "syslog.log", "w") as out:
         for line in router.router_log_lines(router_lines):
             out.write(line + "\n")
